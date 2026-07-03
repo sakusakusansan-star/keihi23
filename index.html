@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>経費精算申請フォーム</title>
-      <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-      <meta http-equiv="Pragma" content="no-cache">
-      <meta http-equiv="Expires" content="0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Arial', sans-serif; background: #EEF2F7; min-height: 100vh; }
 
-    /* ── スタッフ選択画面 ── */
+    /* ── スタッフ選択画面（URLにstaffが無い時のフォールバック用） ── */
     #staff-select-screen {
       position: fixed; inset: 0; background: linear-gradient(135deg, #1B2A4A 0%, #2D5F8A 100%);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -26,7 +26,12 @@
       font-size: 16px; font-weight: bold; cursor: pointer;
     }
     .ss-btn:active { background: #C8A951; color: white; }
-    .ss-loading { color: rgba(255,255,255,0.6); font-size: 13px; }
+    .ss-loading { color: rgba(255,255,255,0.6); font-size: 13px; text-align: center; }
+    .ss-retry-btn {
+      width: 100%; max-width: 300px; padding: 14px; margin-top: 14px;
+      background: #C8A951; color: white; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: bold; cursor: pointer;
+    }
 
     .header {
       background: linear-gradient(135deg, #1B2A4A 0%, #2D5F8A 100%);
@@ -141,8 +146,8 @@
 </head>
 <body>
 
-<!-- スタッフ選択画面 -->
-<div id="staff-select-screen">
+<!-- スタッフ選択画面（フォールバック：URLにstaffが無い場合のみ表示） -->
+<div id="staff-select-screen" class="hidden">
   <div class="ss-title">あなたは誰ですか？</div>
   <div class="ss-sub">最初の1回だけ選んでください（次回から自動で表示されます）</div>
   <div id="ss-buttons">
@@ -281,21 +286,55 @@
   var STAFF_KEY = 'expenseStaffName';
   var currentStaff = null;
 
-  // ── GASとの通信（共通関数） ─────────────────────────
-  async function callApi(action, params) {
+  // ── GASとの通信（共通関数）タイムアウト付き ─────────────────────────
+  function callApi(action, params, timeoutMs) {
+    timeoutMs = timeoutMs || 15000;
     var body = Object.assign({ action: action }, params || {});
-    var res = await fetch(GAS_URL, {
-      method: 'POST',
-      body: JSON.stringify(body)
-      // Content-Typeはあえて指定しない（プリフライト回避のため）
+
+    return new Promise(function(resolve, reject) {
+      var timedOut = false;
+      var timer = setTimeout(function() {
+        timedOut = true;
+        reject(new Error('通信がタイムアウトしました（' + (timeoutMs/1000) + '秒）。電波状況を確認して再試行してください。'));
+      }, timeoutMs);
+
+      fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(body)
+        // Content-Typeはあえて指定しない（プリフライト回避のため）
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(json) {
+          if (timedOut) return;
+          clearTimeout(timer);
+          if (!json.ok) {
+            reject(new Error(json.error || '不明なエラー'));
+          } else {
+            resolve(json.data);
+          }
+        })
+        .catch(function(err) {
+          if (timedOut) return;
+          clearTimeout(timer);
+          reject(new Error('通信エラー: ' + err.message));
+        });
     });
-    var json = await res.json();
-    if (!json.ok) throw new Error(json.error || '不明なエラー');
-    return json.data;
   }
 
   // ── 起動処理 ──────────────────────────────────────
+  // 優先順位: ① URLの ?staff=名前  ② localStorageの記憶  ③ 選択画面を表示
   window.onload = function() {
+    var params = new URLSearchParams(window.location.search);
+    var staffFromUrl = params.get('staff');
+
+    if (staffFromUrl) {
+      // ポータル経由：GASへの人物一覧問い合わせ自体をスキップして即起動
+      currentStaff = staffFromUrl;
+      localStorage.setItem(STAFF_KEY, staffFromUrl); // 直接アクセス時の保険として保存
+      startApp();
+      return;
+    }
+
     currentStaff = localStorage.getItem(STAFF_KEY);
     if (currentStaff) {
       startApp();
@@ -307,6 +346,7 @@
   function showStaffSelect() {
     document.getElementById('staff-select-screen').classList.remove('hidden');
     document.getElementById('main-app').style.display = 'none';
+    document.getElementById('ss-buttons').innerHTML = '<div class="ss-loading">読み込み中…</div>';
     callApi('getStaffList')
       .then(function(list) {
         var html = '';
@@ -316,7 +356,9 @@
         document.getElementById('ss-buttons').innerHTML = html;
       })
       .catch(function(err) {
-        document.getElementById('ss-buttons').innerHTML = '<div class="ss-loading">読み込みエラー: ' + err.message + '</div>';
+        document.getElementById('ss-buttons').innerHTML =
+          '<div class="ss-loading">読み込みエラー: ' + err.message + '</div>' +
+          '<button class="ss-retry-btn" onclick="showStaffSelect()">🔄 再試行する</button>';
       });
   }
 
@@ -329,12 +371,17 @@
 
   function switchStaff() {
     localStorage.removeItem(STAFF_KEY);
-    location.reload();
+    // URLにstaffパラメータが付いていた場合は取り除いてリロード（ポータル経由の固定を解除）
+    var url = new URL(window.location.href);
+    url.searchParams.delete('staff');
+    window.location.href = url.toString();
   }
 
   function startApp() {
+    document.getElementById('staff-select-screen').classList.add('hidden');
     document.getElementById('main-app').style.display = 'block';
     document.getElementById('hdr-name').textContent = currentStaff;
+    document.getElementById('hdr-month').textContent = '読み込み中...';
 
     callApi('getSheetInfo', { staffName: currentStaff })
       .then(function(info) {
@@ -348,8 +395,12 @@
         loadHistory();
       })
       .catch(function(err) {
-        document.getElementById('hdr-month').textContent = '読み込みエラー';
-        alert('初期化エラー: ' + err.message);
+        document.getElementById('hdr-month').textContent = '読み込みエラー（タップで再試行）';
+        document.getElementById('hdr-month').style.cursor = 'pointer';
+        document.getElementById('hdr-month').onclick = function() {
+          document.getElementById('hdr-month').onclick = null;
+          startApp();
+        };
       });
   }
 
@@ -395,7 +446,8 @@
     document.getElementById('analyzing-wrap').style.display = 'block';
     document.getElementById('results-section').style.display = 'none';
 
-    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType })
+    // 画像解析はGemini呼び出しで時間がかかるためタイムアウトを長めに設定
+    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 45000)
       .then(function(results) {
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
@@ -553,15 +605,16 @@
         listEl.innerHTML = html;
         document.getElementById('hdr-total').textContent = '¥' + total.toLocaleString();
       })
-      .catch(function() {
-        listEl.innerHTML = '<div class="empty-msg">読み込みエラー</div>';
+      .catch(function(err) {
+        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + err.message + '<br><button class="btn-submit-all" style="margin-top:10px;max-width:200px;" onclick="loadHistory()">再試行</button></div>';
       });
   }
 
   function deleteExpense(row) {
     if (!confirm('この経費を削除しますか？')) return;
     callApi('deleteExpense', { staffName: currentStaff, row: row })
-      .then(function() { loadHistory(); });
+      .then(function() { loadHistory(); })
+      .catch(function(err) { alert('削除エラー: ' + err.message); });
   }
 
   function updateMonth() {
