@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>経費精算申請フォーム</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Arial', sans-serif; background: #EEF2F7; min-height: 100vh; }
+
+    #staff-select-screen {
+      position: fixed; inset: 0; background: linear-gradient(135deg, #1B2A4A 0%, #2D5F8A 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; z-index: 999;
+    }
+    #staff-select-screen.hidden { display: none; }
+    .ss-title { color: white; font-size: 18px; font-weight: bold; margin-bottom: 24px; text-align: center; }
+    .ss-sub { color: rgba(255,255,255,0.6); font-size: 12px; margin-bottom: 20px; text-align: center; }
+    .ss-btn {
+      width: 100%; max-width: 300px; padding: 16px; margin-bottom: 12px;
+      background: white; color: #1B2A4A; border: none; border-radius: 10px;
+      font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+    .ss-btn:active { background: #C8A951; color: white; }
+    .ss-loading { color: rgba(255,255,255,0.6); font-size: 13px; text-align: center; }
+    .ss-retry-btn {
+      width: 100%; max-width: 300px; padding: 14px; margin-top: 14px;
+      background: #C8A951; color: white; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: bold; cursor: pointer;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1B2A4A 0%, #2D5F8A 100%);
+      padding: calc(20px + env(safe-area-inset-top, 0)) 16px 16px;
+    }
+    .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .header-label { font-size: 10px; letter-spacing: 2px; color: #C8A951; font-weight: bold; }
+    .header-name { font-size: 20px; font-weight: bold; color: white; }
+    .header-switch { font-size: 10px; color: rgba(255,255,255,0.5); text-decoration: underline; cursor: pointer; margin-top: 4px; }
+    .header-month { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 2px; }
+    .header-total-label { font-size: 10px; color: rgba(255,255,255,0.6); text-align: right; }
+    .header-total-val { font-size: 22px; font-weight: bold; color: #C8A951; text-align: right; }
+
+    .tabs {
+      display: flex; background: #1B2A4A;
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
+    }
+    .tab { flex: 1; padding: 14px 6px; text-align: center; font-size: 12px; font-weight: bold; color: rgba(255,255,255,0.45); cursor: pointer; border-top: 3px solid transparent; }
+    .tab.active { color: #C8A951; border-top: 3px solid #C8A951; }
+
+    .content { padding: 14px; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0)); }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .card-title { font-size: 10px; font-weight: bold; color: #9CA3AF; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px; }
+
+    label { display: block; font-size: 11px; font-weight: bold; color: #6B7280; margin-bottom: 5px; }
+    select, input[type="text"], input[type="date"], input[type="number"], input[type="month"] {
+      width: 100%; padding: 12px; border: 1.5px solid #E5E7EB;
+      border-radius: 8px; font-size: 15px; color: #1B2A4A;
+      -webkit-appearance: none; appearance: none; background: #F9FAFB;
+    }
+    select:focus, input:focus { outline: none; border-color: #2D5F8A; background: white; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .gap { margin-top: 12px; }
+
+    .upload-sub { font-size: 11px; color: #9CA3AF; margin-top: 3px; }
+    .upload-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .upload-btn {
+      border: 2px dashed #D1D5DB; border-radius: 10px; background: #F9FAFB;
+      padding: 20px 8px; cursor: pointer; min-height: 84px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .upload-btn:active { background: #EEF2F7; border-color: #2D5F8A; }
+    .upload-btn-icon { font-size: 28px; margin-bottom: 6px; }
+    .upload-btn-text { font-size: 13px; color: #2D5F8A; font-weight: bold; }
+    .preview-wrap { position: relative; margin-top: 12px; display: none; }
+    .preview-wrap img { width: 100%; border-radius: 8px; max-height: 200px; object-fit: contain; background: #f3f4f6; }
+    .preview-clear { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.55); color: white; border: none; border-radius: 50%; width: 28px; height: 28px; font-size: 14px; cursor: pointer; }
+
+    .btn-analyze {
+      width: 100%; padding: 13px; margin-top: 12px;
+      background: linear-gradient(135deg, #1D9E75, #157a5a);
+      color: white; border: none; border-radius: 8px;
+      font-size: 15px; font-weight: bold; cursor: pointer; display: none;
+      letter-spacing: 0.5px;
+    }
+    .analyzing-wrap { display: none; padding: 14px 0; text-align: center; }
+    .analyzing-text { font-size: 13px; color: #6B7280; animation: blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .result-card {
+      border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 14px;
+      margin-bottom: 10px; background: #FAFAFA; position: relative;
+    }
+    .result-card.selected { border-color: #2D5F8A; background: #EEF2F7; }
+    .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .result-num { font-size: 10px; font-weight: bold; color: #9CA3AF; }
+    .result-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #D1D5DB; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+    .result-check.on { background: #2D5F8A; border-color: #2D5F8A; color: white; }
+    .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .result-field label { font-size: 10px; color: #9CA3AF; margin-bottom: 3px; }
+    .result-field input, .result-field select {
+      width: 100%; padding: 8px 10px; border: 1.5px solid #E5E7EB;
+      border-radius: 6px; font-size: 14px; color: #1B2A4A;
+      -webkit-appearance: none; background: white;
+    }
+    .ai-tag { display: inline-block; background: #DCFCE7; color: #15803D; border-radius: 4px; font-size: 9px; padding: 1px 5px; margin-left: 4px; font-weight: bold; }
+
+    .no-results { text-align: center; padding: 20px 0; color: #9CA3AF; font-size: 14px; }
+
+    .btn-submit-all {
+      width: 100%; padding: 16px;
+      background: linear-gradient(135deg, #1B2A4A, #2D5F8A);
+      color: white; border: none; border-radius: 10px;
+      font-size: 16px; font-weight: bold; cursor: pointer; min-height: 52px;
+      letter-spacing: 1px; margin-top: 4px;
+    }
+    .btn-submit-all:active { opacity: 0.88; }
+
+    #result { text-align: center; margin-top: 12px; font-size: 14px; min-height: 20px; font-weight: bold; }
+    .success { color: #15803D; }
+    .error-msg { color: #DC2626; }
+
+    .expense-item { border-left: 4px solid #2D5F8A; border-radius: 0 8px 8px 0; background: #F9FAFB; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    .expense-item.ホテル { border-color: #C8A951; }
+    .expense-item.交際費 { border-color: #DC2626; }
+    .expense-item.その他 { border-color: #6B7280; }
+    .exp-tag { font-size: 10px; font-weight: bold; color: #2D5F8A; margin-bottom: 2px; }
+    .exp-desc { font-size: 13px; color: #1B2A4A; font-weight: bold; }
+    .exp-date { font-size: 11px; color: #9CA3AF; margin-top: 2px; }
+    .exp-amount { font-size: 16px; font-weight: bold; color: #1B2A4A; text-align: right; }
+    .btn-del { font-size: 11px; color: #DC2626; background: none; border: none; cursor: pointer; margin-top: 4px; display: block; text-align: right; }
+    .empty-msg { text-align: center; color: #9CA3AF; font-size: 14px; padding: 32px 0; }
+  </style>
+</head>
+<body>
+
+<div id="staff-select-screen" class="hidden">
+  <div class="ss-title">あなたは誰ですか？</div>
+  <div class="ss-sub">最初の1回だけ選んでください（次回から自動で表示されます）</div>
+  <div id="ss-buttons">
+    <div class="ss-loading">読み込み中…</div>
+  </div>
+</div>
+
+<div id="main-app" style="display:none;">
+
+  <div class="header">
+    <div class="header-top">
+      <div>
+        <div class="header-label">経費精算申請フォーム</div>
+        <div class="header-name" id="hdr-name">—</div>
+        <div class="header-switch" onclick="switchStaff()">別の人に切り替える</div>
+        <div class="header-month" id="hdr-month">読み込み中...</div>
+      </div>
+      <div>
+        <div class="header-total-label">今月合計</div>
+        <div class="header-total-val" id="hdr-total">¥—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <div id="page-input" class="page active">
+
+      <div class="card">
+        <div class="card-title">📷 領収書の写真</div>
+        <div class="upload-buttons">
+          <button class="upload-btn" onclick="document.getElementById('camera-input').click()">
+            <div class="upload-btn-icon">📷</div>
+            <div class="upload-btn-text">撮影する</div>
+          </button>
+          <button class="upload-btn" onclick="document.getElementById('gallery-input').click()">
+            <div class="upload-btn-icon">🖼️</div>
+            <div class="upload-btn-text">アルバムから選択</div>
+          </button>
+        </div>
+        <div class="upload-sub" style="text-align:center;margin-top:8px;">複数枚の領収書が写っていてもOK</div>
+        <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none" onchange="onFileSelected(this)">
+        <input type="file" id="gallery-input" accept="image/*" style="display:none" onchange="onFileSelected(this)">
+        <div class="preview-wrap" id="preview-wrap">
+          <img id="preview-img" src="">
+          <button class="preview-clear" onclick="clearImage()">✕</button>
+        </div>
+        <button class="btn-analyze" id="analyze-btn" onclick="analyzeReceipts()">🤖 AIで一括読み取り</button>
+        <div class="analyzing-wrap" id="analyzing-wrap">
+          <div class="analyzing-text">Geminiが領収書を解析中...</div>
+        </div>
+      </div>
+
+      <div id="results-section" style="display:none;">
+        <div class="card">
+          <div class="card-title">📋 読み取り結果 <span style="color:#2D5F8A;">（内容を確認・修正してください）</span></div>
+          <div id="results-list"></div>
+        </div>
+        <button class="btn-submit-all" onclick="submitAll()">選択した項目を一括送信</button>
+        <div id="result"></div>
+      </div>
+
+      <div id="manual-section">
+        <div class="card">
+          <div class="card-title">✏️ 手動入力</div>
+          <div class="row2">
+            <div>
+              <label>項目</label>
+              <select id="m-item">
+                <option value="">選択</option>
+                <option value="駐車場">駐車場</option>
+                <option value="ホテル">ホテル</option>
+                <option value="交際費">交際費</option>
+                <option value="その他">その他</option>
+              </select>
+            </div>
+            <div>
+              <label>日付</label>
+              <input type="date" id="m-date">
+            </div>
+          </div>
+          <div class="gap">
+            <label>金額（円）</label>
+            <input type="number" id="m-amount" placeholder="例: 1500">
+          </div>
+          <div class="gap">
+            <label>内容・摘要</label>
+            <input type="text" id="m-desc" placeholder="例: ○○パーキング">
+          </div>
+          <button class="btn-submit-all" style="margin-top:14px;" onclick="submitManual()">送　信</button>
+          <div id="m-result" style="text-align:center;margin-top:10px;font-size:14px;font-weight:bold;"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="page-history" class="page">
+      <div class="card">
+        <div class="card-title">📊 今月の経費一覧</div>
+        <div id="expense-list"><div class="empty-msg">読み込み中...</div></div>
+      </div>
+    </div>
+
+    <div id="page-settings" class="page">
+      <div class="card">
+        <div class="card-title">📅 対象年月の変更</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px;">月を選ぶとその月に切り替わります（データはリセットされます）。</p>
+        <label>対象年月</label>
+        <input type="month" id="sel-yearmonth" onchange="updateMonth()">
+        <div id="reset-result" style="margin-top:10px;font-size:13px;text-align:center;"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('input')">＋ 新規入力</div>
+    <div class="tab" onclick="switchTab('history')">履歴</div>
+    <div class="tab" onclick="switchTab('settings')">設定</div>
+  </div>
+
+</div>
+
+<script>
+  var GAS_URL = "https://script.google.com/macros/s/AKfycbyqBXb4mAl4F3Cui3e0S-pYE8jkstbg4_u0gUvoamPMDDldbz6cleYI5cVNuQ4Z2VivuQ/exec";
+
+  var base64Data = null;
+  var mimeType = null;
+  var analyzedItems = [];
+  var STAFF_KEY = 'expenseStaffName';
+  var currentStaff = null;
+
+  function callApi(action, params, timeoutMs) {
+    timeoutMs = timeoutMs || 15000;
+    var body = Object.assign({ action: action }, params || {});
+
+    return new Promise(function(resolve, reject) {
+      var timedOut = false;
+      var timer = setTimeout(function() {
+        timedOut = true;
+        reject(new Error('通信がタイムアウトしました（' + (timeoutMs/1000) + '秒）。電波状況を確認して再試行してください。'));
+      }, timeoutMs);
+
+      fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(json) {
+          if (timedOut) return;
+          clearTimeout(timer);
+          if (!json.ok) {
+            reject(new Error(json.error || '不明なエラー'));
+          } else {
+            resolve(json.data);
+          }
+        })
+        .catch(function(err) {
+          if (timedOut) return;
+          clearTimeout(timer);
+          reject(new Error('通信エラー: ' + err.message));
+        });
+    });
+  }
+
+  window.onload = function() {
+    var params = new URLSearchParams(window.location.search);
+    var staffFromUrl = params.get('staff');
+
+    if (staffFromUrl) {
+      currentStaff = staffFromUrl;
+      localStorage.setItem(STAFF_KEY, staffFromUrl);
+      startApp();
+      return;
+    }
+
+    currentStaff = localStorage.getItem(STAFF_KEY);
+    if (currentStaff) {
+      startApp();
+    } else {
+      showStaffSelect();
+    }
+  };
+
+  function showStaffSelect() {
+    document.getElementById('staff-select-screen').classList.remove('hidden');
+    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('ss-buttons').innerHTML = '<div class="ss-loading">読み込み中…</div>';
+    callApi('getStaffList')
+      .then(function(list) {
+        var html = '';
+        list.forEach(function(name) {
+          html += '<button class="ss-btn" onclick="selectStaff(\'' + name + '\')">' + name + '</button>';
+        });
+        document.getElementById('ss-buttons').innerHTML = html;
+      })
+      .catch(function(err) {
+        document.getElementById('ss-buttons').innerHTML =
+          '<div class="ss-loading">読み込みエラー: ' + err.message + '</div>' +
+          '<button class="ss-retry-btn" onclick="showStaffSelect()">🔄 再試行する</button>';
+      });
+  }
+
+  function selectStaff(name) {
+    localStorage.setItem(STAFF_KEY, name);
+    currentStaff = name;
+    document.getElementById('staff-select-screen').classList.add('hidden');
+    startApp();
+  }
+
+  function switchStaff() {
+    localStorage.removeItem(STAFF_KEY);
+    var url = new URL(window.location.href);
+    url.searchParams.delete('staff');
+    window.location.href = url.toString();
+  }
+
+  function startApp() {
+    document.getElementById('staff-select-screen').classList.add('hidden');
+    document.getElementById('main-app').style.display = 'block';
+    document.getElementById('hdr-name').textContent = currentStaff;
+    document.getElementById('hdr-month').textContent = '読み込み中...';
+
+    callApi('getSheetInfo', { staffName: currentStaff })
+      .then(function(info) {
+        document.getElementById('hdr-month').textContent = info.yearMonth;
+        var m = info.yearMonth.match(/(\d+)年(\d+)月/);
+        if (m) {
+          var y = m[1];
+          var mo = ('0' + m[2]).slice(-2);
+          document.getElementById('sel-yearmonth').value = y + '-' + mo;
+        }
+        loadHistory();
+      })
+      .catch(function(err) {
+        document.getElementById('hdr-month').textContent = '読み込みエラー（タップで再試行）';
+        document.getElementById('hdr-month').style.cursor = 'pointer';
+        document.getElementById('hdr-month').onclick = function() {
+          document.getElementById('hdr-month').onclick = null;
+          startApp();
+        };
+      });
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(function(t, i) {
+      t.classList.toggle('active', ['input','history','settings'][i] === tab);
+    });
+    ['input','history','settings'].forEach(function(p) {
+      document.getElementById('page-'+p).classList.toggle('active', p===tab);
+    });
+    if (tab === 'history') loadHistory();
+  }
+
+  function onFileSelected(input) {
+    if (!input.files || !input.files[0]) return;
+    mimeType = input.files[0].type;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('preview-img').src = e.target.result;
+      document.getElementById('preview-wrap').style.display = 'block';
+      document.getElementById('analyze-btn').style.display = 'block';
+      document.getElementById('manual-section').style.display = 'none';
+      base64Data = e.target.result.split(',')[1];
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+
+  function clearImage() {
+    base64Data = null;
+    analyzedItems = [];
+    document.getElementById('preview-wrap').style.display = 'none';
+    document.getElementById('analyze-btn').style.display = 'none';
+    document.getElementById('camera-input').value = '';
+    document.getElementById('gallery-input').value = '';
+    document.getElementById('results-section').style.display = 'none';
+    document.getElementById('manual-section').style.display = 'block';
+    document.getElementById('results-list').innerHTML = '';
+  }
+
+  function analyzeReceipts() {
+    if (!base64Data) return;
+    document.getElementById('analyze-btn').style.display = 'none';
+    document.getElementById('analyzing-wrap').style.display = 'block';
+    document.getElementById('results-section').style.display = 'none';
+
+    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 45000)
+      .then(function(results) {
+        document.getElementById('analyzing-wrap').style.display = 'none';
+        document.getElementById('analyze-btn').style.display = 'block';
+
+        if (!results || results.length === 0) {
+          document.getElementById('results-list').innerHTML = '<div class="no-results">領収書が読み取れませんでした</div>';
+          document.getElementById('results-section').style.display = 'block';
+          return;
+        }
+
+        analyzedItems = results;
+        renderResults(results);
+        document.getElementById('results-section').style.display = 'block';
+      })
+      .catch(function(err) {
+        document.getElementById('analyzing-wrap').style.display = 'none';
+        document.getElementById('analyze-btn').style.display = 'block';
+        alert('解析エラー: ' + err.message);
+      });
+  }
+
+  function renderResults(items) {
+    var html = '';
+    items.forEach(function(item, idx) {
+      html += '<div class="result-card selected" id="rc-'+idx+'">';
+      html += '<div class="result-header">';
+      html += '<span class="result-num">領収書 ' + (idx+1) + ' <span class="ai-tag">AI読取</span></span>';
+      html += '<div class="result-check on" id="chk-'+idx+'" onclick="toggleSelect('+idx+')">✓</div>';
+      html += '</div>';
+      html += '<div class="result-grid">';
+      html += '<div class="result-field"><label>項目</label>';
+      html += '<select id="ri-item-'+idx+'">';
+      ['駐車場','ホテル','交際費','その他'].forEach(function(v) {
+        html += '<option value="'+v+'"'+(item.item===v?' selected':'')+'>'+v+'</option>';
+      });
+      html += '</select></div>';
+      html += '<div class="result-field"><label>日付</label>';
+      html += '<input type="date" id="ri-date-'+idx+'" value="'+(item.date||'')+'"></div>';
+      html += '<div class="result-field"><label>金額（円）</label>';
+      html += '<input type="number" id="ri-amount-'+idx+'" value="'+(item.amount||'')+'"></div>';
+      html += '<div class="result-field"><label>内容</label>';
+      html += '<input type="text" id="ri-desc-'+idx+'" value="" placeholder="店名など（手入力）"></div>';
+      html += '</div></div>';
+    });
+    document.getElementById('results-list').innerHTML = html;
+  }
+
+  function toggleSelect(idx) {
+    var chk = document.getElementById('chk-'+idx);
+    var card = document.getElementById('rc-'+idx);
+    var on = chk.classList.contains('on');
+    if (on) {
+      chk.classList.remove('on');
+      chk.textContent = '';
+      card.classList.remove('selected');
+    } else {
+      chk.classList.add('on');
+      chk.textContent = '✓';
+      card.classList.add('selected');
+    }
+  }
+
+  function submitAll() {
+    var resultEl = document.getElementById('result');
+    var toSend = [];
+
+    for (var idx = 0; idx < analyzedItems.length; idx++) {
+      var chk = document.getElementById('chk-'+idx);
+      if (!chk || !chk.classList.contains('on')) continue;
+      var item   = document.getElementById('ri-item-'+idx).value;
+      var date   = document.getElementById('ri-date-'+idx).value;
+      var amount = parseInt(document.getElementById('ri-amount-'+idx).value) || 0;
+      var desc   = document.getElementById('ri-desc-'+idx).value;
+      if (!item || !date || !amount) {
+        resultEl.className = 'error-msg';
+        resultEl.textContent = '⚠️ 領収書'+(idx+1)+'の項目・日付・金額を入力してください';
+        return;
+      }
+      toSend.push({ item: item, date: date, amount: amount, description: desc });
+    }
+
+    if (toSend.length === 0) {
+      resultEl.className = 'error-msg';
+      resultEl.textContent = '⚠️ 送信する項目を選択してください';
+      return;
+    }
+
+    resultEl.className = '';
+    resultEl.textContent = '送信中...';
+
+    callApi('saveExpenses', { staffName: currentStaff, dataList: toSend })
+      .then(function(res) {
+        resultEl.className = 'success';
+        resultEl.textContent = '✅ ' + res.saved + '件を登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
+        document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
+        clearImage();
+      })
+      .catch(function(err) {
+        resultEl.className = 'error-msg';
+        resultEl.textContent = '❌ ' + err.message;
+      });
+  }
+
+  function submitManual() {
+    var resultEl = document.getElementById('m-result');
+    var data = [{
+      item: document.getElementById('m-item').value,
+      date: document.getElementById('m-date').value,
+      amount: parseInt(document.getElementById('m-amount').value) || 0,
+      description: document.getElementById('m-desc').value
+    }];
+    if (!data[0].item || !data[0].date || !data[0].amount) {
+      resultEl.className = 'error-msg';
+      resultEl.textContent = '⚠️ 項目・日付・金額は必須です';
+      return;
+    }
+    resultEl.className = '';
+    resultEl.textContent = '送信中...';
+    callApi('saveExpenses', { staffName: currentStaff, dataList: data })
+      .then(function(res) {
+        resultEl.className = 'success';
+        resultEl.textContent = '✅ 登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
+        document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
+        ['m-item','m-date','m-amount','m-desc'].forEach(function(id){ document.getElementById(id).value=''; });
+      })
+      .catch(function(err) {
+        resultEl.className = 'error-msg';
+        resultEl.textContent = '❌ ' + err.message;
+      });
+  }
+
+  function loadHistory() {
+    var listEl = document.getElementById('expense-list');
+    listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    callApi('getExpenses', { staffName: currentStaff })
+      .then(function(expenses) {
+        if (!expenses || expenses.length === 0) {
+          listEl.innerHTML = '<div class="empty-msg">まだ入力がありません</div>';
+          document.getElementById('hdr-total').textContent = '¥0';
+          return;
+        }
+        var total = 0;
+        var html = '';
+        expenses.forEach(function(e) {
+          total += e.amount || 0;
+          var cls = e.item || 'その他';
+          html += '<div class="expense-item ' + cls + '">';
+          html += '<div><div class="exp-tag">' + (e.item||'—') + '</div>';
+          html += '<div class="exp-desc">' + (e.description||'（内容なし）') + '</div>';
+          html += '<div class="exp-date">' + (e.date||'—') + '</div></div>';
+          html += '<div><div class="exp-amount">¥' + (e.amount||0).toLocaleString() + '</div>';
+          html += '<button class="btn-del" onclick="deleteExpense(' + e.row + ')">削除</button></div>';
+          html += '</div>';
+        });
+        listEl.innerHTML = html;
+        document.getElementById('hdr-total').textContent = '¥' + total.toLocaleString();
+      })
+      .catch(function(err) {
+        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + err.message + '<br><button class="btn-submit-all" style="margin-top:10px;max-width:200px;" onclick="loadHistory()">再試行</button></div>';
+      });
+  }
+
+  function deleteExpense(row) {
+    if (!confirm('この経費を削除しますか？')) return;
+    callApi('deleteExpense', { staffName: currentStaff, row: row })
+      .then(function() { loadHistory(); })
+      .catch(function(err) { alert('削除エラー: ' + err.message); });
+  }
+
+  function updateMonth() {
+    var val = document.getElementById('sel-yearmonth').value;
+    if (!val) return;
+    var parts = val.split('-');
+    var year = parseInt(parts[0]);
+    var month = parseInt(parts[1]);
+    if (!confirm(year + '年' + month + '月に切り替えます。今のデータはリセットされます。よろしいですか？')) {
+      startApp();
+      return;
+    }
+    document.getElementById('reset-result').style.color = '#6B7280';
+    document.getElementById('reset-result').textContent = '切り替え中...';
+    callApi('updateYearMonth', { staffName: currentStaff, year: year, month: month })
+      .then(function(ym) {
+        document.getElementById('hdr-month').textContent = ym;
+        document.getElementById('hdr-total').textContent = '¥0';
+        document.getElementById('reset-result').style.color = '#15803D';
+        document.getElementById('reset-result').textContent = '✅ ' + ym + ' にリセットしました';
+      })
+      .catch(function(err) {
+        document.getElementById('reset-result').style.color = '#DC2626';
+        document.getElementById('reset-result').textContent = '❌ ' + err.message;
+      });
+  }
+</script>
+</body>
+</html>
