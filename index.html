@@ -534,7 +534,7 @@
       html += '<div class="result-field"><label>金額（円）</label>';
       html += '<input type="number" id="ri-amount-'+idx+'" value="'+(item.amount||'')+'"></div>';
       html += '<div class="result-field"><label>内容</label>';
-      html += '<input type="text" id="ri-desc-'+idx+'" value="'+(item.description||'')+'" placeholder="店名など"></div>';
+      html += '<input type="text" id="ri-desc-'+idx+'" value="" placeholder="店名など（手入力）"></div>';
       html += '</div></div>';
     });
     document.getElementById('results-list').innerHTML = html;
