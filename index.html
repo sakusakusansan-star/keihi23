@@ -164,6 +164,7 @@
       font-size: 15px; font-weight: bold; cursor: pointer;
     }
     .btn-pdf:active { opacity: 0.88; }
+
   </style>
 </head>
 <body>
@@ -238,7 +239,7 @@
 
         <div id="results-section" style="display:none;">
           <div class="card">
-            <div class="card-title">📋 読み取り結果 <span style="color:#2D5F8A;">（内容を確認・修正してください）</span></div>
+            <div class="card-title">📋 読み取り結果 <span style="color:#2D5F8A;">（内容を入力してください）</span></div>
             <div id="results-list"></div>
           </div>
           <button class="btn-submit-all" onclick="submitAll()">選択した項目を一括送信</button>
@@ -312,6 +313,7 @@
         <button class="btn-pdf" onclick="exportPdf()">📄 PDFをGoogle Driveへ保存</button>
         <div id="pdf-result" style="margin-top:10px;font-size:13px;text-align:center;"></div>
       </div>
+
     </div>
 
   </div>
@@ -330,7 +332,6 @@
   var FIXED_YEAR = 2026;
   var selectedItem = null;
 
-  // ── GASとの通信（共通関数）タイムアウト付き ─────────────────────────
   function callApi(action, params, timeoutMs) {
     timeoutMs = timeoutMs || 15000;
     var body = Object.assign({ action: action }, params || {});
@@ -345,7 +346,6 @@
       fetch(GAS_URL, {
         method: 'POST',
         body: JSON.stringify(body)
-        // Content-Typeはあえて指定しない（プリフライト回避のため）
       })
         .then(function(res) { return res.json(); })
         .then(function(json) {
@@ -365,8 +365,6 @@
     });
   }
 
-  // ── 起動処理 ──────────────────────────────────────
-  // 優先順位: ① URLの ?staff=名前  ② localStorageの記憶  ③ 選択画面を表示
   window.onload = function() {
     var params = new URLSearchParams(window.location.search);
     var staffFromUrl = params.get('staff');
@@ -491,7 +489,6 @@
     document.getElementById('analyzing-wrap').style.display = 'block';
     document.getElementById('results-section').style.display = 'none';
 
-    // 画像解析はGemini呼び出しで時間がかかるためタイムアウト長め
     callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 45000)
       .then(function(results) {
         document.getElementById('analyzing-wrap').style.display = 'none';
@@ -514,6 +511,7 @@
       });
   }
 
+  // 内容欄は常に空にして手入力させる（AIの読み取り値は使わない）
   function renderResults(items) {
     var html = '';
     items.forEach(function(item, idx) {
@@ -533,8 +531,8 @@
       html += '<input type="date" id="ri-date-'+idx+'" value="'+(item.date||'')+'"></div>';
       html += '<div class="result-field"><label>金額（円）</label>';
       html += '<input type="number" id="ri-amount-'+idx+'" value="'+(item.amount||'')+'"></div>';
-      html += '<div class="result-field"><label>内容</label>';
-      html += '<input type="text" id="ri-desc-'+idx+'" value="" placeholder="店名など（手入力）"></div>';
+      html += '<div class="result-field"><label>内容（手入力）</label>';
+      html += '<input type="text" id="ri-desc-'+idx+'" value="" placeholder="内容を入力してください"></div>';
       html += '</div></div>';
     });
     document.getElementById('results-list').innerHTML = html;
@@ -696,7 +694,6 @@
     var el = document.getElementById('pdf-result');
     el.style.color = '#6B7280';
     el.textContent = '保存中...';
-    // PDF生成は時間がかかることがあるためタイムアウト長め
     callApi('exportStaffPdfToDrive', { staffName: currentStaff }, 60000)
       .then(function(msg) {
         el.style.color = '#15803D';
@@ -707,6 +704,7 @@
         el.textContent = '❌ ' + err.message;
       });
   }
+
 </script>
 </body>
 </html>
