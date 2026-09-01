@@ -1,59 +1,88 @@
 /**
- * 経費精算フォーム : 領収書のAI読み取り（Gemini）
+ * 経費精算システム - 領収書AI読み取り（Gemini）修正版
+ * ============================================================
+ * Code.gs の analyzeReceipts() をこのファイルの内容で置き換える。
+ * 関数名・引数・戻り値は既存と同じなので、doPost 側の
+ *   data = analyzeReceipts(req.base64Image, req.mimeType);
+ * はそのままで動く。
  *
- * 「解析エラー: 画像の解析に失敗しました: Geminiからの応答が空でした」
- * の対策版。既存の doPost 内の analyzeReceipts 分岐から
+ * 「Geminiからの応答が空でした」の直接の原因:
+ *   muteHttpExceptions:true で HTTP ステータスを一切見ていないため、
+ *   400 / 403 / 429 / 5xx のエラー応答（candidates を含まない
+ *   {"error":{...}} ）が全部「応答が空」に化けていた。
+ *   → 下記 callGemini_() で getResponseCode() を検査し、
+ *     Gemini が返した本当のエラーメッセージを表示する。
  *
- *     return analyzeReceipts_(body.base64Image, body.mimeType);
- *
- * のように呼び出してください（戻り値は
- * [{item, date, amount, description}, ...] の配列）。
- *
- * スクリプトプロパティに GEMINI_API_KEY を設定しておくこと。
- * （拡張機能 → Apps Script → プロジェクトの設定 → スクリプト プロパティ）
+ * 準備:
+ *   1. Google AI Studio (https://aistudio.google.com/apikey) で
+ *      "AIza..." 形式のAPIキーを取得する。
+ *   2. プロジェクトの設定 → スクリプト プロパティ に
+ *      GEMINI_API_KEY として登録する（ソースに直書きしない）。
+ *   3. エディタから testGeminiKey() を実行し、キーが有効か確認する。
+ * ============================================================
  */
 
-// 応答が空になる主因への対策をまとめた設定
 var GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest'];
-var GEMINI_MAX_ATTEMPTS = 3;      // 空応答・5xx・429 は自動リトライ
+var GEMINI_MAX_ATTEMPTS = 3;
 var GEMINI_MAX_OUTPUT_TOKENS = 4096;
 
 var RECEIPT_PROMPT =
-  'あなたは日本の領収書・レシートを読み取るアシスタントです。\n' +
-  '画像に写っているすべての領収書について、次の項目を抽出してJSON配列だけを返してください。\n' +
-  '- item: 「駐車場」「ホテル」「交際費」「その他」のいずれか1つ\n' +
+  'この画像に写っている領収書・レシートをすべて読み取り、JSON配列で返してください。' +
+  '複数枚写っている場合はすべてリストアップしてください。\n' +
   '- date: 支払日を YYYY-MM-DD 形式で（読み取れない場合は空文字）\n' +
-  '- amount: 合計金額の数値のみ（円、カンマや記号は含めない。読み取れない場合は0）\n' +
-  '- description: 店名など短い説明（読み取れない場合は空文字）\n' +
-  '領収書が1枚も写っていない場合は空配列 [] を返してください。説明文は書かないこと。';
+  '- amount: 税込合計金額の数値のみ（読み取れない場合は0）\n' +
+  '- item: 「駐車場」「ホテル」「交際費」「その他」のうち最も近いもの\n' +
+  '- description: 店名や支払いの具体的な内容（例: ○○パーキング、○○ホテル）\n' +
+  '領収書が1枚も写っていない場合は空配列 [] を返してください。';
 
-// Gemini に構造を強制する（自由記述で崩れて空扱いになるのを防ぐ）
 var RECEIPT_SCHEMA = {
   type: 'ARRAY',
   items: {
     type: 'OBJECT',
     properties: {
-      item: { type: 'STRING' },
       date: { type: 'STRING' },
       amount: { type: 'NUMBER' },
+      item: { type: 'STRING' },
       description: { type: 'STRING' }
     },
-    required: ['item', 'date', 'amount']
+    required: ['date', 'amount', 'item', 'description']
   }
 };
 
-function analyzeReceipts_(base64Image, mimeType) {
+
+// ── APIキーの取得（スクリプトプロパティ優先） ─────────────
+function getGeminiApiKey_() {
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+
+  // 移行期間中は Code.gs の変数もフォールバックとして見る
+  if (!key && typeof GEMINI_API_KEY === 'string' && GEMINI_API_KEY) {
+    key = GEMINI_API_KEY;
+  }
+  if (!key) {
+    throw new Error('GEMINI_API_KEY が設定されていません（スクリプトプロパティに登録してください）');
+  }
+  if (key.indexOf('AIza') !== 0) {
+    throw new Error(
+      'APIキーの形式が正しくありません。Google AI Studio で発行される ' +
+      '"AIza" で始まるキーを使用してください（現在の値は ' + key.slice(0, 3) + '... 形式）'
+    );
+  }
+  return key;
+}
+
+
+// ── 画像(base64)をGeminiに渡して複数領収書を抽出 ─────────
+function analyzeReceipts(base64Image, mimeType) {
   if (!base64Image) throw new Error('画像データが空です');
 
-  var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
-  if (!apiKey) throw new Error('GEMINI_API_KEY がスクリプトプロパティに設定されていません');
+  var apiKey = getGeminiApiKey_();
 
   var payload = {
     contents: [{
       role: 'user',
       parts: [
-        { text: RECEIPT_PROMPT },
-        { inline_data: { mime_type: normalizeMime_(mimeType), data: base64Image } }
+        { inline_data: { mime_type: normalizeMime_(mimeType), data: base64Image } },
+        { text: RECEIPT_PROMPT }
       ]
     }],
     generationConfig: {
@@ -61,14 +90,14 @@ function analyzeReceipts_(base64Image, mimeType) {
       maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
       responseMimeType: 'application/json',
       responseSchema: RECEIPT_SCHEMA,
-      // 思考トークンで出力枠を使い切り、本文が空のまま
-      // finishReason=MAX_TOKENS で返ってくるのを防ぐ
+      // gemini-2.5-* は既定で thinking が有効。思考トークンだけで
+      // 出力枠を使い切り、parts が空のまま返ってくるのを防ぐ
       thinkingConfig: { thinkingBudget: 0 }
     },
-    // 領収書が「安全でない」と誤判定されて空応答になるのを防ぐ
+    // 領収書が誤って有害判定され、candidates ごと落ちるのを防ぐ
     safetySettings: [
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_ONLY_HIGH' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_ONLY_HIGH' },
       { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' }
     ]
@@ -79,12 +108,11 @@ function analyzeReceipts_(base64Image, mimeType) {
   for (var m = 0; m < GEMINI_MODELS.length; m++) {
     for (var attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
       try {
-        var text = callGemini_(GEMINI_MODELS[m], apiKey, payload);
-        return parseReceipts_(text);
+        return parseReceipts_(callGemini_(GEMINI_MODELS[m], apiKey, payload));
       } catch (err) {
         lastError = err;
         Logger.log('Gemini失敗 model=' + GEMINI_MODELS[m] + ' attempt=' + attempt + ' : ' + err.message);
-        if (!isRetryable_(err.message)) break;      // 恒久エラーは次のモデルへ
+        if (!isRetryable_(err.message)) break;   // 恒久エラーは次のモデルへ
         if (attempt < GEMINI_MAX_ATTEMPTS) Utilities.sleep(1000 * attempt);
       }
     }
@@ -93,6 +121,8 @@ function analyzeReceipts_(base64Image, mimeType) {
   throw new Error('画像の解析に失敗しました: ' + (lastError ? lastError.message : '不明なエラー'));
 }
 
+
+// ── Gemini呼び出し（HTTPステータスと空応答の理由を必ず見る） ────
 function callGemini_(model, apiKey, payload) {
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
             model + ':generateContent?key=' + encodeURIComponent(apiKey);
@@ -107,8 +137,10 @@ function callGemini_(model, apiKey, payload) {
   var code = res.getResponseCode();
   var raw = res.getContentText();
 
+  // ここが今回の修正の肝。従来はステータスを見ずに JSON.parse していたため
+  // エラー応答（candidates なし）が「応答が空でした」に化けていた。
   if (code !== 200) {
-    var apiMsg = '';
+    var apiMsg;
     try { apiMsg = JSON.parse(raw).error.message; } catch (e) { apiMsg = raw.slice(0, 300); }
     throw new Error('Gemini APIエラー (HTTP ' + code + '): ' + apiMsg);
   }
@@ -117,10 +149,9 @@ function callGemini_(model, apiKey, payload) {
   try {
     json = JSON.parse(raw);
   } catch (e) {
-    throw new Error('Geminiの応答を解析できませんでした');
+    throw new Error('Geminiの応答を解析できませんでした: ' + raw.slice(0, 200));
   }
 
-  // 空応答のときは「なぜ空なのか」を必ず添える
   if (json.promptFeedback && json.promptFeedback.blockReason) {
     throw new Error('画像がブロックされました (' + json.promptFeedback.blockReason + ')');
   }
@@ -132,13 +163,15 @@ function callGemini_(model, apiKey, payload) {
   if (!text) {
     var reason = candidate.finishReason || '不明';
     if (reason === 'MAX_TOKENS') {
-      throw new Error('Geminiの応答が長すぎて途中で打ち切られました (MAX_TOKENS)');
+      throw new Error('Geminiの応答が長すぎて打ち切られました (MAX_TOKENS)');
     }
     throw new Error('Geminiからの応答が空でした (finishReason=' + reason + ')');
   }
   return text;
 }
 
+
+// ── parts[0] だけでなく全パートを連結する ────────────────
 function extractText_(candidate) {
   var parts = (candidate.content && candidate.content.parts) || [];
   var buf = [];
@@ -148,17 +181,19 @@ function extractText_(candidate) {
   return buf.join('').trim();
 }
 
+
 function parseReceipts_(text) {
-  // responseMimeType=application/json でも念のためコードフェンスを剥がす
-  var cleaned = text.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  var cleaned = String(text).replace(/```json/g, '').replace(/```/g, '').trim();
 
   var data;
   try {
     data = JSON.parse(cleaned);
   } catch (e) {
-    var match = cleaned.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error('Geminiの応答をJSONとして読み取れませんでした');
-    data = JSON.parse(match[0]);
+    var arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    var objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (arrayMatch)      data = JSON.parse(arrayMatch[0]);
+    else if (objMatch)   data = JSON.parse(objMatch[0]);
+    else throw new Error('領収書の情報をパースできませんでした');
   }
 
   if (!Array.isArray(data)) data = [data];
@@ -168,14 +203,15 @@ function parseReceipts_(text) {
     var row = data[i] || {};
     var amount = parseInt(String(row.amount == null ? '' : row.amount).replace(/[^0-9]/g, ''), 10);
     results.push({
-      item: normalizeItem_(row.item),
       date: normalizeDate_(row.date),
       amount: isNaN(amount) ? 0 : amount,
+      item: normalizeItem_(row.item),
       description: row.description ? String(row.description) : ''
     });
   }
   return results;
 }
+
 
 function normalizeItem_(value) {
   var allowed = ['駐車場', 'ホテル', '交際費', 'その他'];
@@ -183,13 +219,14 @@ function normalizeItem_(value) {
   return allowed.indexOf(value) >= 0 ? value : 'その他';
 }
 
+
 function normalizeDate_(value) {
   if (!value) return '';
-  var text = String(value).trim();
-  var m = text.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  var m = String(value).trim().match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
   if (!m) return '';
   return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
 }
+
 
 function normalizeMime_(mimeType) {
   var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
@@ -198,6 +235,27 @@ function normalizeMime_(mimeType) {
   return allowed.indexOf(mimeType) >= 0 ? mimeType : 'image/jpeg';
 }
 
+
 function isRetryable_(message) {
   return /応答が空|HTTP 5\d\d|HTTP 429|MAX_TOKENS|タイムアウト|timeout/i.test(String(message || ''));
+}
+
+
+/**
+ * APIキーの疎通確認。GASエディタからこの関数を実行し、
+ * 実行ログに何が出るかを見ればキーの状態が一発で分かる。
+ */
+function testGeminiKey() {
+  var key = getGeminiApiKey_();
+  var res = UrlFetchApp.fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key),
+    { muteHttpExceptions: true }
+  );
+  Logger.log('HTTP ' + res.getResponseCode());
+  Logger.log(res.getContentText().slice(0, 1000));
+  if (res.getResponseCode() === 200) {
+    Logger.log('✅ APIキーは有効です');
+  } else {
+    Logger.log('❌ APIキーが無効です。上のエラーメッセージを確認してください');
+  }
 }
