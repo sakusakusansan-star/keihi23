@@ -108,8 +108,16 @@ HTTPステータスを一度も確認していません。そのため Gemini �
 
 1. 左メニューの「**ファイル**」の「＋」→「**スクリプト**」を選ぶ
 2. ファイル名を `analyzeReceipts` にする
-3. 中身を全部消して、**別途渡す `analyze-receipts.gs` の内容を全文貼り付ける**
-4. 保存する（Ctrl+S）
+3. 別タブで次のURLを開き、表示されたコードを**全文コピーする**
+
+   ```
+   https://raw.githubusercontent.com/sakusakusansan-star/keihi23/claude/kore-ga-deruna-2ya4la/apps-script/analyze-receipts.gs
+   ```
+
+4. Apps Script に戻り、新しいファイルの中身を全部消して**全文貼り付ける**
+5. 保存する（Ctrl+S）
+6. 貼り付けたコードの先頭に `var GEMINI_MODELS = ...` の行があることを確認する
+   （途中で切れて貼られていないかの確認）
 
 ---
 
