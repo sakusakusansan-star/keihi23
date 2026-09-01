@@ -103,6 +103,18 @@
     .analyzing-wrap { display: none; padding: 16px 0; text-align: center; }
     .analyzing-text { font-size: 14px; color: #6B7280; animation: blink 1.2s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .analyzing-sub { font-size: 12px; color: #9CA3AF; margin-top: 6px; }
+
+    .analyze-error { display: none; margin-top: 14px; padding: 14px; border-radius: 10px;
+      background: #FEF2F2; border: 1.5px solid #FCA5A5; }
+    .analyze-error-title { font-size: 14px; font-weight: bold; color: #B91C1C; margin-bottom: 6px; }
+    .analyze-error-msg { font-size: 12px; color: #7F1D1D; line-height: 1.6; word-break: break-word; }
+    .analyze-error-hint { font-size: 12px; color: #6B7280; line-height: 1.7; margin-top: 8px; }
+    .analyze-error-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .analyze-error-actions button { flex: 1; padding: 12px; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: bold; cursor: pointer; }
+    .btn-err-retry { background: #1D9E75; color: white; }
+    .btn-err-manual { background: white; color: #1B2A4A; border: 1.5px solid #D1D5DB !important; }
 
     .result-card {
       border: 1.5px solid #E5E7EB; border-radius: 12px; padding: 16px;
@@ -233,7 +245,17 @@
           </div>
           <button class="btn-analyze" id="analyze-btn" onclick="analyzeReceipts()">🤖 AIで一括読み取り</button>
           <div class="analyzing-wrap" id="analyzing-wrap">
-            <div class="analyzing-text">Geminiが領収書を解析中...</div>
+            <div class="analyzing-text" id="analyzing-text">Geminiが領収書を解析中...</div>
+            <div class="analyzing-sub" id="analyzing-sub"></div>
+          </div>
+          <div class="analyze-error" id="analyze-error">
+            <div class="analyze-error-title">読み取りに失敗しました</div>
+            <div class="analyze-error-msg" id="analyze-error-msg"></div>
+            <div class="analyze-error-hint" id="analyze-error-hint"></div>
+            <div class="analyze-error-actions">
+              <button class="btn-err-retry" onclick="analyzeReceipts()">🔄 もう一度読み取る</button>
+              <button class="btn-err-manual" onclick="switchMethod('manual')">✏️ 手動入力</button>
+            </div>
           </div>
         </div>
 
@@ -459,22 +481,94 @@
     selectedItem = el.getAttribute('data-value');
   }
 
+  // 端末のカメラ画像はそのままだと数MB〜十数MBあり、GAS→Gemini の
+  // ペイロード上限・実行時間を超えて「応答が空」になる原因になるため、
+  // 送信前に長辺を縮小して JPEG に再エンコードする。
+  var MAX_IMAGE_EDGE = 1600;
+  var JPEG_QUALITY = 0.82;
+  // 空応答／タイムアウトは一時的なことが多いので自動で数回リトライする
+  var MAX_ANALYZE_ATTEMPTS = 3;
+  var ANALYZE_TIMEOUT_MS = 60000;
+  var analyzeSeq = 0;
+
+  function compressImage(file) {
+    return new Promise(function(resolve) {
+      var reader = new FileReader();
+      var fallbackMime = file.type || 'image/jpeg';
+
+      reader.onerror = function() {
+        resolve(null);
+      };
+      reader.onload = function(e) {
+        var dataUrl = e.target.result;
+        var raw = { dataUrl: dataUrl, base64: dataUrl.split(',')[1], mimeType: fallbackMime };
+        var img = new Image();
+
+        // HEIC など canvas にデコードできない形式は元データのまま送る
+        img.onerror = function() { resolve(raw); };
+        img.onload = function() {
+          var w = img.naturalWidth || img.width;
+          var h = img.naturalHeight || img.height;
+          if (!w || !h) { resolve(raw); return; }
+
+          var scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * scale));
+          var ch = Math.max(1, Math.round(h * scale));
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = cw;
+            canvas.height = ch;
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, cw, ch);
+            ctx.drawImage(img, 0, 0, cw, ch);
+            var out = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+            if (!out || out.indexOf('data:image/jpeg') !== 0 || out.length < 1000) {
+              resolve(raw);
+              return;
+            }
+            resolve({ dataUrl: out, base64: out.split(',')[1], mimeType: 'image/jpeg' });
+          } catch (err) {
+            resolve(raw);
+          }
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   function onFileSelected(input) {
     if (!input.files || !input.files[0]) return;
-    mimeType = input.files[0].type;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      document.getElementById('preview-img').src = e.target.result;
+    var file = input.files[0];
+
+    hideAnalyzeError();
+    document.getElementById('results-section').style.display = 'none';
+    document.getElementById('analyze-btn').style.display = 'none';
+    document.getElementById('analyzing-wrap').style.display = 'block';
+    document.getElementById('analyzing-text').textContent = '画像を準備中...';
+    document.getElementById('analyzing-sub').textContent = '';
+
+    compressImage(file).then(function(result) {
+      document.getElementById('analyzing-wrap').style.display = 'none';
+      if (!result || !result.base64) {
+        showAnalyzeError('画像の読み込みに失敗しました');
+        return;
+      }
+      base64Data = result.base64;
+      mimeType = result.mimeType;
+      document.getElementById('preview-img').src = result.dataUrl;
       document.getElementById('preview-wrap').style.display = 'block';
       document.getElementById('analyze-btn').style.display = 'block';
-      base64Data = e.target.result.split(',')[1];
-    };
-    reader.readAsDataURL(input.files[0]);
+    });
   }
 
   function clearImage() {
     base64Data = null;
     analyzedItems = [];
+    analyzeSeq++;
+    hideAnalyzeError();
+    document.getElementById('analyzing-wrap').style.display = 'none';
     document.getElementById('preview-wrap').style.display = 'none';
     document.getElementById('analyze-btn').style.display = 'none';
     document.getElementById('camera-input').value = '';
@@ -483,14 +577,49 @@
     document.getElementById('results-list').innerHTML = '';
   }
 
+  function hideAnalyzeError() {
+    document.getElementById('analyze-error').style.display = 'none';
+  }
+
+  function showAnalyzeError(message) {
+    message = String(message || '不明なエラー');
+    var hint;
+    if (/応答が空|empty|読み取れ/.test(message)) {
+      hint = 'AIが領収書を認識できませんでした。明るい場所で、領収書全体がまっすぐ大きく写るように撮り直すと成功しやすくなります。それでも直らない場合は「手動入力」をご利用ください。';
+    } else if (/タイムアウト|timeout/i.test(message)) {
+      hint = '通信に時間がかかっています。電波の良い場所で、もう一度お試しください。';
+    } else if (/通信エラー|Failed to fetch|NetworkError/i.test(message)) {
+      hint = 'ネットワークに接続できませんでした。電波状況を確認して再試行してください。';
+    } else {
+      hint = '時間をおいて再試行してください。繰り返し失敗する場合は「手動入力」をご利用ください。';
+    }
+    document.getElementById('analyze-error-msg').textContent = message;
+    document.getElementById('analyze-error-hint').textContent = hint;
+    document.getElementById('analyze-error').style.display = 'block';
+  }
+
+  function isRetryableAnalyzeError(message) {
+    return /応答が空|empty|タイムアウト|timeout|通信エラー|Failed to fetch|NetworkError|一時的|429|500|502|503|504/i.test(String(message || ''));
+  }
+
   function analyzeReceipts() {
     if (!base64Data) return;
+    hideAnalyzeError();
     document.getElementById('analyze-btn').style.display = 'none';
     document.getElementById('analyzing-wrap').style.display = 'block';
     document.getElementById('results-section').style.display = 'none';
+    analyzeSeq++;
+    runAnalyze(1, analyzeSeq);
+  }
 
-    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 45000)
+  function runAnalyze(attempt, seq) {
+    document.getElementById('analyzing-text').textContent = 'Geminiが領収書を解析中...';
+    document.getElementById('analyzing-sub').textContent =
+      (attempt > 1) ? '再試行中（' + attempt + '/' + MAX_ANALYZE_ATTEMPTS + '）' : '';
+
+    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, ANALYZE_TIMEOUT_MS)
       .then(function(results) {
+        if (seq !== analyzeSeq) return;
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
 
@@ -505,9 +634,21 @@
         document.getElementById('results-section').style.display = 'block';
       })
       .catch(function(err) {
+        if (seq !== analyzeSeq) return;
+
+        if (attempt < MAX_ANALYZE_ATTEMPTS && isRetryableAnalyzeError(err.message)) {
+          document.getElementById('analyzing-sub').textContent =
+            '読み取りに失敗したため再試行します（' + (attempt + 1) + '/' + MAX_ANALYZE_ATTEMPTS + '）';
+          setTimeout(function() {
+            if (seq !== analyzeSeq) return;
+            runAnalyze(attempt + 1, seq);
+          }, 1500 * attempt);
+          return;
+        }
+
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
-        alert('解析エラー: ' + err.message);
+        showAnalyzeError(err.message);
       });
   }
 
