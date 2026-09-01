@@ -22,6 +22,9 @@
  * ============================================================
  */
 
+// 使用モデル。スクリプトプロパティ GEMINI_MODEL に値があれば
+// そちらが最優先で使われる（コードを触らずに最新モデルへ乗り換えられる）。
+// 現在利用できるモデルIDは listGeminiModels() を実行して確認すること。
 var GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest'];
 var GEMINI_MAX_ATTEMPTS = 3;
 var GEMINI_MAX_OUTPUT_TOKENS = 4096;
@@ -71,6 +74,20 @@ function getGeminiApiKey_() {
 }
 
 
+// ── 使用モデルの決定（スクリプトプロパティの上書きを優先） ─────
+function getGeminiModels_() {
+  var override = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL');
+  if (!override) return GEMINI_MODELS;
+
+  override = override.trim().replace(/^models\//, '');
+  var models = [override];
+  for (var i = 0; i < GEMINI_MODELS.length; i++) {
+    if (GEMINI_MODELS[i] !== override) models.push(GEMINI_MODELS[i]);  // フォールバックとして残す
+  }
+  return models;
+}
+
+
 // ── 画像(base64)をGeminiに渡して複数領収書を抽出 ─────────
 function analyzeReceipts(base64Image, mimeType) {
   if (!base64Image) throw new Error('画像データが空です');
@@ -103,15 +120,16 @@ function analyzeReceipts(base64Image, mimeType) {
     ]
   };
 
+  var models = getGeminiModels_();
   var lastError = null;
 
-  for (var m = 0; m < GEMINI_MODELS.length; m++) {
+  for (var m = 0; m < models.length; m++) {
     for (var attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
       try {
-        return parseReceipts_(callGemini_(GEMINI_MODELS[m], apiKey, payload));
+        return parseReceipts_(callGemini_(models[m], apiKey, payload));
       } catch (err) {
         lastError = err;
-        Logger.log('Gemini失敗 model=' + GEMINI_MODELS[m] + ' attempt=' + attempt + ' : ' + err.message);
+        Logger.log('Gemini失敗 model=' + models[m] + ' attempt=' + attempt + ' : ' + err.message);
         if (!isRetryable_(err.message)) break;   // 恒久エラーは次のモデルへ
         if (attempt < GEMINI_MAX_ATTEMPTS) Utilities.sleep(1000 * attempt);
       }
@@ -242,20 +260,94 @@ function isRetryable_(message) {
 
 
 /**
- * APIキーの疎通確認。GASエディタからこの関数を実行し、
- * 実行ログに何が出るかを見ればキーの状態が一発で分かる。
+ * APIキーの疎通確認 + 利用可能モデル一覧。
+ * GASエディタからこの関数を実行し、実行ログを見る。
+ * APIキーはログに出さないので、そのまま報告に貼っても安全。
+ */
+function listGeminiModels() {
+  var key = getGeminiApiKey_();
+  var models = [];
+  var pageToken = '';
+
+  for (var page = 0; page < 5; page++) {
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models' +
+              '?pageSize=200&key=' + encodeURIComponent(key) +
+              (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+
+    var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var code = res.getResponseCode();
+    var raw = res.getContentText();
+
+    if (code !== 200) {
+      var msg;
+      try { msg = JSON.parse(raw).error.message; } catch (e) { msg = raw.slice(0, 300); }
+      Logger.log('❌ APIキーが無効です (HTTP ' + code + ')');
+      Logger.log('   ' + msg);
+      return;
+    }
+
+    var json = JSON.parse(raw);
+    var list = json.models || [];
+    for (var i = 0; i < list.length; i++) {
+      var methods = list[i].supportedGenerationMethods || [];
+      if (methods.indexOf('generateContent') < 0) continue;   // 画像解析に使えないものは除外
+      models.push({
+        id: String(list[i].name || '').replace(/^models\//, ''),
+        label: list[i].displayName || ''
+      });
+    }
+
+    pageToken = json.nextPageToken || '';
+    if (!pageToken) break;
+  }
+
+  models.sort(function(a, b) { return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
+
+  Logger.log('✅ APIキーは有効です');
+  Logger.log('generateContent が使えるモデル: ' + models.length + '件');
+  Logger.log('----------------------------------------');
+  for (var k = 0; k < models.length; k++) {
+    Logger.log(models[k].id + (models[k].label ? '   （' + models[k].label + '）' : ''));
+  }
+  Logger.log('----------------------------------------');
+  Logger.log('使いたいモデルIDを、スクリプトプロパティ GEMINI_MODEL に設定してください。');
+  Logger.log('現在の設定: ' + (getGeminiModels_().join(' → ')));
+}
+
+
+/**
+ * 旧名。listGeminiModels() と同じ処理を呼ぶだけ。
  */
 function testGeminiKey() {
-  var key = getGeminiApiKey_();
-  var res = UrlFetchApp.fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key),
-    { muteHttpExceptions: true }
-  );
-  Logger.log('HTTP ' + res.getResponseCode());
-  Logger.log(res.getContentText().slice(0, 1000));
-  if (res.getResponseCode() === 200) {
-    Logger.log('✅ APIキーは有効です');
-  } else {
-    Logger.log('❌ APIキーが無効です。上のエラーメッセージを確認してください');
+  listGeminiModels();
+}
+
+
+/**
+ * 設定中のモデルに実際にリクエストを投げて、テキストが返るか確認する。
+ * 画像なしの軽いリクエストなので、キー・モデルID・generationConfig の
+ * 組み合わせが正しいかを短時間で検証できる。
+ */
+function testGeminiModel() {
+  var apiKey = getGeminiApiKey_();
+  var model = getGeminiModels_()[0];
+
+  var payload = {
+    contents: [{ role: 'user', parts: [{ text: '「OK」とだけ返してください。' }] }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  Logger.log('テスト対象モデル: ' + model);
+  try {
+    var text = callGemini_(model, apiKey, payload);
+    Logger.log('✅ 応答あり: ' + text);
+    Logger.log('このモデルで領収書の読み取りが動く状態です。');
+  } catch (err) {
+    Logger.log('❌ 失敗: ' + err.message);
+    Logger.log('thinkingConfig 非対応のモデルの場合は、別のモデルIDを試してください。');
   }
 }

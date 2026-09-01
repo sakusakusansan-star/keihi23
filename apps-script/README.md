@@ -96,3 +96,35 @@ data = analyzeReceipts(req.base64Image, req.mimeType);
 - 解析タイムアウトを 45秒 → 60秒に延長
 - 失敗時は `alert` ではなく、原因別ヒントと
   「もう一度読み取る」「手動入力」ボタン付きのエラーカードを表示
+
+## 使用モデルの切り替え
+
+モデルIDはコードに固定せず、スクリプトプロパティで差し替えられる。
+
+| プロパティ | 例 | 意味 |
+|---|---|---|
+| `GEMINI_API_KEY` | `AIza...` | AI Studio 発行のAPIキー（必須） |
+| `GEMINI_MODEL` | `gemini-flash-latest` | 使用モデル。未設定なら `GEMINI_MODELS` の先頭 |
+
+`GEMINI_MODEL` を設定しても、失敗時は `GEMINI_MODELS`（`gemini-2.5-flash`、
+`gemini-flash-latest`）へ順にフォールバックする。
+
+### 確認用の関数
+
+GASエディタから実行し、実行ログを見る。APIキーの値はログに出さない。
+
+| 関数 | 用途 |
+|---|---|
+| `listGeminiModels()` | キーの有効性確認 + `generateContent` が使えるモデルID一覧 |
+| `testGeminiModel()` | 設定中のモデルに実際にリクエストを投げて応答を確認 |
+| `testGeminiKey()` | `listGeminiModels()` の旧名（同じ処理） |
+
+モデルIDは実際に一覧を取得して決めること。ドキュメントやモデル名の記憶から
+推測して固定しない（提供終了・改名で動かなくなるため）。
+
+## ブラウザエージェントへの作業指示
+
+`browser-agent-instructions.md` に、キー発行からデプロイ・動作確認までの
+手順書がある。**既存デプロイのURLを変えないこと**（`index.html` に
+ハードコードされているため）と、**APIキーを報告に書かせないこと**が
+前提条件として書いてある。
