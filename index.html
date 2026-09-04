@@ -322,7 +322,18 @@
 
 <script>
   // ▼▼▼ GASのWebアプリURL（/execで終わるもの） ▼▼▼
-  var GAS_URL = "https://script.google.com/macros/s/AKfycbzyXEYU_0VhvEpnmZx3JWaxXRdOEP-Lam9R9Fxwv4nVRr6ExzQrBmdO-rgUlwGkcgzU/exec";
+  // 福山・古川・清田は共通スプレッドシート（1つのGASデプロイ）に同居しているが、
+  // 山口さんは専用スプレッドシート・専用デプロイを使う。
+  // スタッフ名ごとに送信先を振り分け、無ければ既定（3人共通）に送る。
+  var GAS_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbzyXEYU_0VhvEpnmZx3JWaxXRdOEP-Lam9R9Fxwv4nVRr6ExzQrBmdO-rgUlwGkcgzU/exec";
+  var GAS_URLS = {
+    // 山口さん専用デプロイの /exec URL。まだ未デプロイのため未設定（既定へフォールバック）。
+    '山口': ''
+  };
+  function gasUrlFor(staffName) {
+    var url = staffName && GAS_URLS[staffName];
+    return url || GAS_URL_DEFAULT;
+  }
 
   var base64Data = null;
   var mimeType = null;
@@ -343,7 +354,7 @@
         reject(new Error('通信がタイムアウトしました（' + (timeoutMs/1000) + '秒）。電波状況を確認して再試行してください。'));
       }, timeoutMs);
 
-      fetch(GAS_URL, {
+      fetch(gasUrlFor(currentStaff), {
         method: 'POST',
         body: JSON.stringify(body)
       })
