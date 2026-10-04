@@ -459,17 +459,40 @@
     selectedItem = el.getAttribute('data-value');
   }
 
+  // 送信前に画像を縮小・JPEG圧縮する（スマホ写真をそのまま送るとアップロードとGeminiの解析が遅くなりタイムアウトする）
+  var MAX_IMAGE_SIDE = 2000;
+  var JPEG_QUALITY = 0.85;
+
   function onFileSelected(input) {
     if (!input.files || !input.files[0]) return;
-    mimeType = input.files[0].type;
+    var file = input.files[0];
     var reader = new FileReader();
     reader.onload = function(e) {
-      document.getElementById('preview-img').src = e.target.result;
-      document.getElementById('preview-wrap').style.display = 'block';
-      document.getElementById('analyze-btn').style.display = 'block';
-      base64Data = e.target.result.split(',')[1];
+      var originalDataUrl = e.target.result;
+      var img = new Image();
+      img.onload = function() {
+        var scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        setImage(canvas.toDataURL('image/jpeg', JPEG_QUALITY), 'image/jpeg');
+      };
+      img.onerror = function() {
+        // ブラウザで縮小できない形式（HEIC等）は元データのまま送る
+        setImage(originalDataUrl, file.type);
+      };
+      img.src = originalDataUrl;
     };
-    reader.readAsDataURL(input.files[0]);
+    reader.readAsDataURL(file);
+  }
+
+  function setImage(dataUrl, type) {
+    mimeType = type;
+    base64Data = dataUrl.split(',')[1];
+    document.getElementById('preview-img').src = dataUrl;
+    document.getElementById('preview-wrap').style.display = 'block';
+    document.getElementById('analyze-btn').style.display = 'block';
   }
 
   function clearImage() {
@@ -489,7 +512,7 @@
     document.getElementById('analyzing-wrap').style.display = 'block';
     document.getElementById('results-section').style.display = 'none';
 
-    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 45000)
+    callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 120000)
       .then(function(results) {
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
