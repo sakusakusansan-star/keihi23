@@ -242,7 +242,7 @@
             <div class="card-title">📋 読み取り結果 <span style="color:#2D5F8A;">（内容を入力してください）</span></div>
             <div id="results-list"></div>
           </div>
-          <button class="btn-submit-all" onclick="submitAll()">選択した項目を一括送信</button>
+          <button class="btn-submit-all" id="btn-submit-all" onclick="submitAll()">選択した項目を一括送信</button>
           <div id="result"></div>
         </div>
       </div>
@@ -275,7 +275,7 @@
             <input type="text" id="m-desc" placeholder="例: ○○パーキング">
           </div>
 
-          <button class="btn-submit-all" onclick="submitManual()">送　信</button>
+          <button class="btn-submit-all" id="btn-submit-manual" onclick="submitManual()">送　信</button>
           <div id="m-result"></div>
         </div>
       </div>
@@ -295,7 +295,7 @@
       <div class="card">
         <div class="card-title">📅 対象年月の変更</div>
         <p style="font-size:13px;color:#6B7280;margin-bottom:12px;">月を選ぶと自動でその月に切り替わります（データはリセットされます）。</p>
-        <div class="year-fixed">対象年：2026年（固定）</div>
+        <div class="year-fixed" id="year-note">対象年：月を選ぶと自動で決まります（12月に1月を選ぶと翌年）</div>
         <label>対象月</label>
         <select id="sel-month" onchange="updateMonth()">
           <option value="">月を選択</option>
@@ -320,6 +320,7 @@
 
 </div>
 
+<script src="gas-client.js"></script>
 <script>
   // ▼▼▼ GASのWebアプリURL（/execで終わるもの） ▼▼▼
   var GAS_URL = "https://script.google.com/macros/s/AKfycbzyXEYU_0VhvEpnmZx3JWaxXRdOEP-Lam9R9Fxwv4nVRr6ExzQrBmdO-rgUlwGkcgzU/exec";
@@ -329,40 +330,50 @@
   var analyzedItems = [];
   var STAFF_KEY = 'expenseStaffName';
   var currentStaff = null;
-  var FIXED_YEAR = 2026;
   var selectedItem = null;
+  var historyItems = [];   // 履歴タブに出している経費（削除のときに中身を照合する）
+
+  // 何度やり直しても結果が変わらない操作（読み込み）だけ自動で再試行する。
+  // 登録・削除・月の切り替え・PDFは、2回走ると二重になるので再試行しない。
+  var RETRY_SAFE_ACTIONS = { getStaffList: true, getSheetInfo: true, getExpenses: true };
 
   function callApi(action, params, timeoutMs) {
-    timeoutMs = timeoutMs || 15000;
     var body = Object.assign({ action: action }, params || {});
-
-    return new Promise(function(resolve, reject) {
-      var timedOut = false;
-      var timer = setTimeout(function() {
-        timedOut = true;
-        reject(new Error('通信がタイムアウトしました（' + (timeoutMs/1000) + '秒）。電波状況を確認して再試行してください。'));
-      }, timeoutMs);
-
-      fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify(body)
-      })
-        .then(function(res) { return res.json(); })
-        .then(function(json) {
-          if (timedOut) return;
-          clearTimeout(timer);
-          if (!json.ok) {
-            reject(new Error(json.error || '不明なエラー'));
-          } else {
-            resolve(json.data);
-          }
-        })
-        .catch(function(err) {
-          if (timedOut) return;
-          clearTimeout(timer);
-          reject(new Error('通信エラー: ' + err.message));
-        });
+    return GasClient.post(GAS_URL, body, {
+      timeoutMs: timeoutMs || 30000,
+      retry: !!RETRY_SAFE_ACTIONS[action]
+    }).then(function(json) {
+      if (!json || !json.ok) throw new Error((json && json.error) || '不明なエラー');
+      return json.data;
+    }, function(err) {
+      if (err.maybeDone) {
+        err.message += '（サーバー側では処理が終わっている場合があります。もう一度送る前に「履歴」タブで確認してください）';
+      }
+      throw err;
     });
+  }
+
+  // 月だけ選んだときの年。今日に一番近い年にする
+  // （12月に「1月」を選べば翌年、1月に「12月」を選べば前年）。
+  function guessYear(month) {
+    var now = new Date();
+    var diff = Number(month) - (now.getMonth() + 1);
+    return now.getFullYear() + (diff > 6 ? -1 : diff < -6 ? 1 : 0);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // 送信中はボタンを押せなくする（連打・押し直しでの二重登録を防ぐ）
+  function lockButton(id, busy) {
+    var b = document.getElementById(id);
+    if (!b) return;
+    if (busy) { b.dataset.label = b.textContent; b.textContent = '送信中…'; }
+    else if (b.dataset.label) { b.textContent = b.dataset.label; }
+    b.disabled = busy;
   }
 
   window.onload = function() {
@@ -386,15 +397,19 @@
     document.getElementById('ss-buttons').innerHTML = '<div class="ss-loading">読み込み中…</div>';
     callApi('getStaffList')
       .then(function(list) {
-        var html = '';
+        var box = document.getElementById('ss-buttons');
+        box.innerHTML = '';
         list.forEach(function(name) {
-          html += '<button class="ss-btn" onclick="selectStaff(\'' + name + '\')">' + name + '</button>';
+          var b = document.createElement('button');
+          b.className = 'ss-btn';
+          b.textContent = name;
+          b.onclick = function() { selectStaff(name); };
+          box.appendChild(b);
         });
-        document.getElementById('ss-buttons').innerHTML = html;
       })
       .catch(function(err) {
         document.getElementById('ss-buttons').innerHTML =
-          '<div class="ss-loading">読み込みエラー: ' + err.message + '</div>' +
+          '<div class="ss-loading">読み込みエラー: ' + esc(err.message) + '</div>' +
           '<button class="ss-retry-btn" onclick="showStaffSelect()">🔄 再試行する</button>';
       });
   }
@@ -423,7 +438,10 @@
       .then(function(info) {
         document.getElementById('hdr-month').textContent = info.yearMonth;
         var m = info.yearMonth.match(/(\d+)年(\d+)月/);
-        if (m) document.getElementById('sel-month').value = String(parseInt(m[2], 10));
+        if (m) {
+          document.getElementById('sel-month').value = String(parseInt(m[2], 10));
+          document.getElementById('year-note').textContent = '対象年：' + m[1] + '年（月を変えると自動で決まります）';
+        }
         loadHistory();
       })
       .catch(function(err) {
@@ -577,6 +595,7 @@
   }
 
   function submitAll() {
+    if (document.getElementById('btn-submit-all').disabled) return;   // 送信中
     var resultEl = document.getElementById('result');
     var toSend = [];
 
@@ -603,8 +622,9 @@
 
     resultEl.className = '';
     resultEl.textContent = '送信中...';
+    lockButton('btn-submit-all', true);
 
-    callApi('saveExpenses', { staffName: currentStaff, dataList: toSend })
+    callApi('saveExpenses', { staffName: currentStaff, dataList: toSend, requestId: GasClient.newId() })
       .then(function(res) {
         resultEl.className = 'success';
         resultEl.textContent = '✅ ' + res.saved + '件を登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
@@ -614,10 +634,12 @@
       .catch(function(err) {
         resultEl.className = 'error-msg';
         resultEl.textContent = '❌ ' + err.message;
-      });
+      })
+      .then(function() { lockButton('btn-submit-all', false); });
   }
 
   function submitManual() {
+    if (document.getElementById('btn-submit-manual').disabled) return;   // 送信中
     var resultEl = document.getElementById('m-result');
     var data = [{
       item: selectedItem,
@@ -632,7 +654,8 @@
     }
     resultEl.className = '';
     resultEl.textContent = '送信中...';
-    callApi('saveExpenses', { staffName: currentStaff, dataList: data })
+    lockButton('btn-submit-manual', true);
+    callApi('saveExpenses', { staffName: currentStaff, dataList: data, requestId: GasClient.newId() })
       .then(function(res) {
         resultEl.className = 'success';
         resultEl.textContent = '✅ 登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
@@ -646,7 +669,8 @@
       .catch(function(err) {
         resultEl.className = 'error-msg';
         resultEl.textContent = '❌ ' + err.message;
-      });
+      })
+      .then(function() { lockButton('btn-submit-manual', false); });
   }
 
   function loadHistory() {
@@ -654,6 +678,7 @@
     listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
     callApi('getExpenses', { staffName: currentStaff })
       .then(function(expenses) {
+        historyItems = expenses || [];
         if (!expenses || expenses.length === 0) {
           listEl.innerHTML = '<div class="empty-msg">まだ入力がありません</div>';
           document.getElementById('hdr-total').textContent = '¥0';
@@ -661,40 +686,66 @@
         }
         var total = 0;
         var html = '';
-        expenses.forEach(function(e) {
-          total += e.amount || 0;
+        expenses.forEach(function(e, i) {
+          total += Number(e.amount) || 0;
           var cls = e.item || 'その他';
           var dateStr = e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—';
-          html += '<div class="expense-item ' + cls + '">';
-          html += '<div><div class="exp-tag">' + (e.item||'—') + '</div>';
-          html += '<div class="exp-desc">' + (e.description||'（内容なし）') + '</div>';
-          html += '<div class="exp-date">' + dateStr + '</div></div>';
-          html += '<div><div class="exp-amount">¥' + (e.amount||0).toLocaleString() + '</div>';
-          html += '<button class="btn-del" onclick="deleteExpense(' + e.row + ')">削除</button></div>';
+          // 内容は手入力なので、記号（< や &）が入っても崩れないようエスケープする
+          html += '<div class="expense-item ' + esc(cls) + '">';
+          html += '<div><div class="exp-tag">' + esc(e.item || '—') + '</div>';
+          html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
+          html += '<div class="exp-date">' + esc(dateStr) + '</div></div>';
+          html += '<div><div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div>';
+          html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">削除</button></div>';
           html += '</div>';
         });
         listEl.innerHTML = html;
         document.getElementById('hdr-total').textContent = '¥' + total.toLocaleString();
       })
       .catch(function(err) {
-        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + err.message + '<br><button class="btn-submit-all" style="margin-top:10px;max-width:200px;" onclick="loadHistory()">再試行</button></div>';
+        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + esc(err.message) + '<br><button class="btn-submit-all" style="margin-top:10px;max-width:200px;" onclick="loadHistory()">再試行</button></div>';
       });
   }
 
-  function deleteExpense(row) {
-    if (!confirm('この経費を削除しますか？')) return;
-    callApi('deleteExpense', { staffName: currentStaff, row: row })
+  // 削除は「行番号」で行うため、一覧が古いと別の経費を消してしまう。
+  // 消す直前に最新の一覧を取り直し、中身が同じ経費の行番号を使う。
+  function sameExpense(a, b) {
+    return String(a.item) === String(b.item) &&
+      String(a.date) === String(b.date) &&
+      Number(a.amount) === Number(b.amount) &&
+      String(a.description || '') === String(b.description || '');
+  }
+
+  function deleteExpense(idx, btn) {
+    var target = historyItems[idx];
+    if (!target) return;
+    if (!confirm('この経費を削除しますか？\n' + (target.item || '') + '　¥' + (Number(target.amount) || 0).toLocaleString())) return;
+    if (btn) { btn.disabled = true; btn.textContent = '削除中…'; }
+
+    callApi('getExpenses', { staffName: currentStaff })
+      .then(function(latest) {
+        latest = latest || [];
+        var hit = latest.filter(function(e) { return e.row === target.row && sameExpense(e, target); })[0] ||
+                  latest.filter(function(e) { return sameExpense(e, target); })[0];
+        if (!hit) throw new Error('この経費は見つかりませんでした（すでに削除されたか、内容が変わっています）。一覧を読み込み直しました。');
+        return callApi('deleteExpense', { staffName: currentStaff, row: hit.row });
+      })
       .then(function() { loadHistory(); })
-      .catch(function(err) { alert('削除エラー: ' + err.message); });
+      .catch(function(err) {
+        alert('削除エラー: ' + err.message);
+        loadHistory();
+      });
   }
 
   function updateMonth() {
     var monthVal = document.getElementById('sel-month').value;
     if (!monthVal) return;
     var month = parseInt(monthVal, 10);
-    var year = FIXED_YEAR;
+    var year = guessYear(month);
+    document.getElementById('year-note').textContent = '対象年：' + year + '年（選んだ月から自動で決まります）';
 
-    if (!confirm(year + '年' + month + '月に切り替えます。今のデータはリセットされます。よろしいですか？')) {
+    if (!confirm(year + '年' + month + '月に切り替えます。今のデータはリセットされます。\n' +
+        '（今月分をまだPDF保存していなければ、先に「PDFをGoogle Driveへ保存」をしてください）\nよろしいですか？')) {
       startApp();
       return;
     }
