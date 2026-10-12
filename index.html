@@ -728,7 +728,11 @@
         var hit = latest.filter(function(e) { return e.row === target.row && sameExpense(e, target); })[0] ||
                   latest.filter(function(e) { return sameExpense(e, target); })[0];
         if (!hit) throw new Error('この経費は見つかりませんでした（すでに削除されたか、内容が変わっています）。一覧を読み込み直しました。');
-        return callApi('deleteExpense', { staffName: currentStaff, row: hit.row });
+        // GAS側でも、この行の中身が hit と同じときだけ消す（取り直しと削除のあいだに変わった場合の備え）
+        return callApi('deleteExpense', {
+          staffName: currentStaff, row: hit.row,
+          expect: { item: hit.item, date: hit.date, amount: hit.amount, description: hit.description }
+        });
       })
       .then(function() { loadHistory(); })
       .catch(function(err) {

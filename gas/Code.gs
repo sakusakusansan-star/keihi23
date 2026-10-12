@@ -8,6 +8,12 @@
  * ・PDF保存機能つき
  * ・Gemini APIによる領収書AI読み取り機能つき
  * ・GitHub Pages版フロントエンドからのfetch呼び出しに対応（doPost追加）
+ * ・書き込みは LockService で1件ずつ処理、送信IDで二重登録を防止
+ * ・削除は中身を照合してから行う（一覧が古いときに別の経費を消さない）
+ * ・年は固定しない（B5の「YYYY年M月」から読む）
+ *
+ * 【貼り替えるのはこのファイル（コード.gs）だけ】
+ *   analyzeReceipts.gs はそのまま。GEMINI_API_KEY などのスクリプト プロパティも触らない。
  * ============================================================
  */
 
@@ -22,7 +28,11 @@ var STAFF_SHEETS = {
 
 var DATA_START_ROW    = 8;   // データ開始行（固定）
 var ORIGINAL_END_ROW  = 32;  // 月リセット時に戻す標準の最終データ行（25件分）
-var FIXED_YEAR = 2026;
+// コードの版。/exec をブラウザで開くと表示されるので、再デプロイが反映されたかの確認に使う。
+var CODE_VERSION = '2026-10-12';
+
+// 送信IDの記録を残す時間（秒）。同じIDの送信はこの間、二重に登録しない。
+var DEDUPE_SEC = 21600;
 
 var PDF_ROOT_FOLDER_ID = "1VreXxTQpiTeiAoc_uxsLrpj1KloJ7V2o";
 
@@ -133,21 +143,36 @@ function rewriteDataBlock(sheet, totalRow, dataArray) {
 }
 
 
-// ── Webアプリのエントリーポイント（GAS内蔵Form.htmlを直接開いた場合） ───
+// ── デプロイ確認用（ブラウザで /exec を直接開いたときに返る） ───
+// 以前は Form.html を返していたが、プロジェクトに Form.html が無く
+// エラー画面になっていた。フォームは GitHub Pages 版を使う。
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Form')
-    .setTitle('経費精算申請フォーム')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return ContentService.createTextOutput(JSON.stringify({
+    ok: true, status: 'ready', version: CODE_VERSION, staff: getStaffList()
+  })).setMimeType(ContentService.MimeType.JSON);
 }
+
+// 読むだけの操作。これ以外は同時に走らないようロックをかける。
+// （2人がほぼ同時に保存すると、片方の行がもう片方で上書きされるため）
+var READ_ONLY_ACTIONS = { getStaffList: true, getSheetInfo: true, getExpenses: true, analyzeReceipts: true };
 
 
 // ── Webアプリのエントリーポイント（GitHub Pages版フロントエンドからのfetch用） ───
 function doPost(e) {
   var out;
+  var lock = null;
   try {
     var req = JSON.parse(e.postData.contents);
     var action = req.action;
     var data;
+
+    if (!READ_ONLY_ACTIONS[action]) {
+      lock = LockService.getScriptLock();
+      if (!lock.tryLock(25000)) {
+        lock = null;
+        throw new Error('ほかの人の処理が終わっていません。少し待ってからもう一度お試しください。');
+      }
+    }
 
     if (action === 'getStaffList') {
       data = getStaffList();
@@ -156,11 +181,11 @@ function doPost(e) {
     } else if (action === 'analyzeReceipts') {
       data = analyzeReceipts(req.base64Image, req.mimeType);
     } else if (action === 'saveExpenses') {
-      data = saveExpenses(req.staffName, req.dataList);
+      data = saveExpensesOnce(req.staffName, req.dataList, req.requestId);
     } else if (action === 'getExpenses') {
       data = getExpenses(req.staffName);
     } else if (action === 'deleteExpense') {
-      data = deleteExpense(req.staffName, req.row);
+      data = deleteExpense(req.staffName, req.row, req.expect);
     } else if (action === 'updateYearMonth') {
       data = updateYearMonth(req.staffName, req.year, req.month);
     } else if (action === 'exportStaffPdfToDrive') {
@@ -169,9 +194,12 @@ function doPost(e) {
       throw new Error('不明なaction: ' + action);
     }
 
+    if (lock) SpreadsheetApp.flush();
     out = { ok: true, data: data };
   } catch (err) {
     out = { ok: false, error: err.message };
+  } finally {
+    if (lock) lock.releaseLock();
   }
   return ContentService.createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
@@ -223,8 +251,33 @@ function saveExpenses(staffName, dataList) {
 }
 
 
+// ── 送信IDつきの保存 ───────────────────────────────────────
+// 通信が途中で切れると、保存は済んでいるのにフォームには失敗と出る。
+// そこで送り直すと同じ経費が2行になるので、同じ送信IDが来たら
+// 保存せずに前回の結果を返す。
+function saveExpensesOnce(staffName, dataList, requestId) {
+  requestId = String(requestId || '').slice(0, 100);
+  var cache = CacheService.getScriptCache();
+  var key = 'keihi:' + requestId;
+  if (requestId) {
+    var done = cache.get(key);
+    if (done) return JSON.parse(done);
+  }
+  var res = saveExpenses(staffName, dataList);
+  if (requestId) {
+    try { cache.put(key, JSON.stringify(res), DEDUPE_SEC); } catch (ignore) {}
+  }
+  return res;
+}
+
+
 // ── 対象年月の変更（標準サイズに戻して初期化） ─────────────
 function updateYearMonth(staffName, year, month) {
+  year = Number(year);
+  month = Number(month);
+  if (!(year >= 2000 && year < 2100) || !(month >= 1 && month <= 12)) {
+    throw new Error('年月の指定が不正です');
+  }
   var sheet = getSheetByStaff(staffName);
   var totalRow = findTotalRow(sheet);
   var currentEnd = totalRow - 1;
@@ -267,20 +320,37 @@ function getExpenses(staffName) {
 
 
 // ── 1件削除（詰め直し＋日付順ソート＋No振り直し＋合計更新） ─────
-function deleteExpense(staffName, row) {
+// expect（フォームが一覧で見ていた中身）が付いていれば、その行の中身と
+// 一致するときだけ消す。一覧が古いと行番号がずれていて、別の経費を消してしまうため。
+function deleteExpense(staffName, row, expect) {
   var sheet = getSheetByStaff(staffName);
   var totalRow = findTotalRow(sheet);
   var existing = readDataBlock(sheet, totalRow);
 
-  var targetIndex = row - DATA_START_ROW;
+  var targetIndex = Number(row) - DATA_START_ROW;
   if (targetIndex < 0 || targetIndex >= existing.length) {
     throw new Error("削除対象のデータが見つかりません");
+  }
+  if (expect && !sameExpense_(existing[targetIndex], expect)) {
+    throw new Error("一覧が古くなっていたため削除をやめました。一覧を読み込み直してから、もう一度削除してください");
   }
 
   existing.splice(targetIndex, 1);
   rewriteDataBlock(sheet, totalRow, existing);
 
   return "OK";
+}
+
+
+// シートの1件と、フォームが見ていた1件が同じ経費か。
+// 日付は Date と文字列（JSONで届いたもの）が混ざるので、時刻に直して比べる。
+function sameExpense_(a, b) {
+  if (String(a.item || '') !== String(b.item || '')) return false;
+  if (String(a.description || '') !== String(b.description || '')) return false;
+  if ((Number(a.amount) || 0) !== (Number(b.amount) || 0)) return false;
+  var ta = toTime(a.date), tb = toTime(b.date);
+  if (ta !== Infinity && tb !== Infinity) return ta === tb;
+  return String(a.date || '') === String(b.date || '');
 }
 
 
@@ -291,7 +361,7 @@ function exportStaffPdfToDrive(staffName) {
 
   var ymText = sheet.getRange("B5").getValue().toString();
   var m = ymText.match(/(\d+)年(\d+)月/);
-  var y = m ? m[1] : String(FIXED_YEAR);
+  var y = m ? m[1] : String(new Date().getFullYear());
   var mo = m ? m[2] : "1";
 
   var rootFolder = DriveApp.getFolderById(PDF_ROOT_FOLDER_ID);
@@ -317,8 +387,9 @@ function getOrCreateFolder(parent, name) {
 }
 
 function exportSheetAsPdf(ss, sheet) {
-  var baseUrl = ss.getUrl().replace(/edit$/, "");
-  var exportUrl = baseUrl + "export"
+  // ss.getUrl() は末尾が "/edit" とは限らず（#gid=... が付く等）、壊れたURLになって
+  // PDFではなくHTMLのエラーページを保存してしまうことがある。IDから組み立てる。
+  var exportUrl = "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export"
     + "?exportFormat=pdf&format=pdf"
     + "&gid=" + sheet.getSheetId()
     + "&size=A4&portrait=true&fitw=true"
@@ -327,7 +398,17 @@ function exportSheetAsPdf(ss, sheet) {
 
   var token = ScriptApp.getOAuthToken();
   var response = UrlFetchApp.fetch(exportUrl, {
-    headers: { "Authorization": "Bearer " + token }
+    headers: { "Authorization": "Bearer " + token },
+    muteHttpExceptions: true
   });
-  return response.getBlob();
+  var code = response.getResponseCode();
+  if (code !== 200) {
+    throw new Error("PDFの書き出しに失敗しました（HTTP " + code + "）");
+  }
+  var blob = response.getBlob();
+  // 権限が無いとPDFではなくログイン画面のHTMLが返ることがある。中身がHTMLの「.pdf」を作らない。
+  if (String(blob.getContentType() || "").indexOf("pdf") === -1) {
+    throw new Error("PDFではなくHTMLが返されました。スプレッドシートの閲覧権限を確認してください");
+  }
+  return blob;
 }
