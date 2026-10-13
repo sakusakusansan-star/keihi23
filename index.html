@@ -4,168 +4,184 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>経費精算申請フォーム</title>
+<meta name="theme-color" content="#EFF1F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C1015" media="(prefers-color-scheme: dark)">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <style>
+  <link rel="stylesheet" href="sieg-theme.css">
+<style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Arial', sans-serif; background: #EEF2F7; min-height: 100vh; }
+    body { font-family: var(--sg-font); background: var(--sg-blue-tint); min-height: 100vh; }
 
     #staff-select-screen {
-      position: fixed; inset: 0; background: linear-gradient(135deg, #1B2A4A 0%, #2D5F8A 100%);
+      position: fixed; inset: 0; background: var(--sg-primary);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       padding: 24px; z-index: 999;
     }
     #staff-select-screen.hidden { display: none; }
-    .ss-title { color: white; font-size: 19px; font-weight: bold; margin-bottom: 24px; text-align: center; }
+    .ss-title { color: var(--sg-on-primary); font-size: 19px; font-weight: bold; margin-bottom: 24px; text-align: center; }
     .ss-sub { color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 20px; text-align: center; }
     .ss-btn {
       width: 100%; max-width: 320px; padding: 18px; margin-bottom: 12px;
-      background: white; color: #1B2A4A; border: none; border-radius: 12px;
+      background: var(--sg-surface); color: var(--sg-ink); border: none; border-radius: 12px;
       font-size: 17px; font-weight: bold; cursor: pointer;
     }
-    .ss-btn:active { background: #C8A951; color: white; }
+    .ss-btn:active { background: var(--sg-amber); color: var(--sg-on-primary); }
     .ss-loading { color: rgba(255,255,255,0.6); font-size: 13px; text-align: center; }
     .ss-retry-btn {
       width: 100%; max-width: 320px; padding: 14px; margin-top: 14px;
-      background: #C8A951; color: white; border: none; border-radius: 12px;
+      background: var(--sg-amber); color: var(--sg-on-primary); border: none; border-radius: 12px;
       font-size: 15px; font-weight: bold; cursor: pointer;
     }
 
     .header {
-      background: linear-gradient(135deg, #1B2A4A 0%, #2D5F8A 100%);
+      background: var(--sg-primary);
       padding: calc(20px + env(safe-area-inset-top, 0)) 16px 16px;
       max-width: 480px; margin: 0 auto;
     }
     .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-    .header-label { font-size: 10px; letter-spacing: 2px; color: #C8A951; font-weight: bold; }
-    .header-name { font-size: 21px; font-weight: bold; color: white; }
+    .header-label { font-size: 10px; letter-spacing: 2px; color: var(--sg-amber); font-weight: bold; }
+    .header-name { font-size: 21px; font-weight: bold; color: var(--sg-on-primary); }
     .header-switch { font-size: 11px; color: rgba(255,255,255,0.5); text-decoration: underline; cursor: pointer; margin-top: 4px; }
     .header-month { font-size: 13px; color: rgba(255,255,255,0.7); margin-top: 2px; }
     .header-total-label { font-size: 10px; color: rgba(255,255,255,0.6); text-align: right; }
-    .header-total-val { font-size: 24px; font-weight: bold; color: #C8A951; text-align: right; }
+    .header-total-val { font-size: 24px; font-weight: bold; color: var(--sg-amber); text-align: right; }
 
-    .tabs {
-      display: flex; background: #1B2A4A;
-      position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
-      padding-bottom: env(safe-area-inset-bottom, 0);
-      box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-      max-width: 480px; margin: 0 auto;
-    }
-    .tab { flex: 1; padding: 15px 6px; text-align: center; font-size: 13px; font-weight: bold; color: rgba(255,255,255,0.45); cursor: pointer; border-top: 3px solid transparent; }
-    .tab.active { color: #C8A951; border-top: 3px solid #C8A951; }
+    /* タブは画面の下（sieg-theme.css の .sg-tabbar） */
 
     .content { padding: 16px; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0)); max-width: 480px; margin: 0 auto; }
     .page { display: none; }
     .page.active { display: block; }
 
-    .card { background: white; border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-    .card-title { font-size: 11px; font-weight: bold; color: #9CA3AF; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px; }
+    .card { background: var(--sg-surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: var(--sg-lift); }
+    .card-title { font-size: 11px; font-weight: bold; color: var(--sg-faint); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px; }
 
-    label { display: block; font-size: 12px; font-weight: bold; color: #6B7280; margin-bottom: 6px; }
+    label { display: block; font-size: 12px; font-weight: bold; color: var(--sg-mute); margin-bottom: 6px; }
     select, input[type="text"], input[type="date"], input[type="number"] {
-      width: 100%; padding: 14px; border: 1.5px solid #E5E7EB;
-      border-radius: 10px; font-size: 16px; color: #1B2A4A;
-      -webkit-appearance: none; appearance: none; background: #F9FAFB;
+      width: 100%; padding: 14px; border: 1.5px solid var(--sg-hair);
+      border-radius: 10px; font-size: 16px; color: var(--sg-ink);
+      -webkit-appearance: none; appearance: none; background: var(--sg-sunk);
     }
-    select:focus, input:focus { outline: none; border-color: #2D5F8A; background: white; }
+    select:focus, input:focus { outline: none; border-color: var(--sg-primary); background: var(--sg-surface); }
     .gap { margin-top: 14px; }
 
     .item-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .item-chip {
       padding: 16px 8px; text-align: center; border-radius: 10px;
-      border: 2px solid #E5E7EB; background: #F9FAFB; font-size: 15px; font-weight: bold;
-      color: #6B7280; cursor: pointer;
+      border: 2px solid var(--sg-hair); background: var(--sg-sunk); font-size: 15px; font-weight: bold;
+      color: var(--sg-mute); cursor: pointer;
     }
-    .item-chip.selected { border-color: #2D5F8A; background: #EEF2F7; color: #1B2A4A; }
+    .item-chip.selected { border-color: var(--sg-primary); background: var(--sg-blue-tint); color: var(--sg-ink); }
 
     .upload-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .upload-btn {
-      border: 2px dashed #D1D5DB; border-radius: 12px; background: #F9FAFB;
+      border: 2px dashed var(--sg-hair); border-radius: 12px; background: var(--sg-sunk);
       padding: 22px 8px; cursor: pointer; min-height: 90px;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    .upload-btn:active { background: #EEF2F7; border-color: #2D5F8A; }
+    .upload-btn:active { background: var(--sg-blue-tint); border-color: var(--sg-primary); }
     .upload-btn-icon { font-size: 30px; margin-bottom: 6px; }
-    .upload-btn-text { font-size: 14px; color: #2D5F8A; font-weight: bold; }
-    .upload-sub { font-size: 12px; color: #9CA3AF; margin-top: 8px; text-align: center; }
+    .upload-btn-text { font-size: 14px; color: var(--sg-blue); font-weight: bold; }
+    .upload-sub { font-size: 12px; color: var(--sg-faint); margin-top: 8px; text-align: center; }
     .preview-wrap { position: relative; margin-top: 14px; display: none; }
-    .preview-wrap img { width: 100%; border-radius: 10px; max-height: 220px; object-fit: contain; background: #f3f4f6; }
-    .preview-clear { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.55); color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 15px; cursor: pointer; }
+    .preview-wrap img { width: 100%; border-radius: 10px; max-height: 220px; object-fit: contain; background: var(--sg-sunk); }
+    .preview-clear { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.55); color: var(--sg-on-primary); border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 15px; cursor: pointer; }
 
     .btn-analyze {
       width: 100%; padding: 15px; margin-top: 14px;
-      background: linear-gradient(135deg, #1D9E75, #157a5a);
-      color: white; border: none; border-radius: 10px;
+      background: var(--sg-green);
+      color: var(--sg-on-primary); border: none; border-radius: 10px;
       font-size: 16px; font-weight: bold; cursor: pointer; display: none;
       letter-spacing: 0.5px;
     }
     .analyzing-wrap { display: none; padding: 16px 0; text-align: center; }
-    .analyzing-text { font-size: 14px; color: #6B7280; animation: blink 1.2s infinite; }
+    .analyzing-text { font-size: 14px; color: var(--sg-mute); animation: blink 1.2s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
     .result-card {
-      border: 1.5px solid #E5E7EB; border-radius: 12px; padding: 16px;
-      margin-bottom: 12px; background: #FAFAFA; position: relative;
+      border: 1.5px solid var(--sg-hair); border-radius: 12px; padding: 16px;
+      margin-bottom: 12px; background: var(--sg-sunk); position: relative;
     }
-    .result-card.selected { border-color: #2D5F8A; background: #EEF2F7; }
+    .result-card.selected { border-color: var(--sg-primary); background: var(--sg-blue-tint); }
     .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .result-num { font-size: 11px; font-weight: bold; color: #9CA3AF; }
-    .result-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #D1D5DB; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
-    .result-check.on { background: #2D5F8A; border-color: #2D5F8A; color: white; }
+    .result-num { font-size: 11px; font-weight: bold; color: var(--sg-faint); }
+    .result-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--sg-hair); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .result-check.on { background: var(--sg-primary); border-color: var(--sg-primary); color: var(--sg-on-primary); }
     .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .result-field label { font-size: 11px; color: #9CA3AF; margin-bottom: 4px; }
+    .result-field label { font-size: 11px; color: var(--sg-faint); margin-bottom: 4px; }
     .result-field input, .result-field select {
-      width: 100%; padding: 10px; border: 1.5px solid #E5E7EB;
-      border-radius: 8px; font-size: 15px; color: #1B2A4A;
-      -webkit-appearance: none; background: white;
+      width: 100%; padding: 10px; border: 1.5px solid var(--sg-hair);
+      border-radius: 8px; font-size: 15px; color: var(--sg-ink);
+      -webkit-appearance: none; background: var(--sg-surface);
     }
     .result-field.full { grid-column: 1 / -1; }
-    .ai-tag { display: inline-block; background: #DCFCE7; color: #15803D; border-radius: 4px; font-size: 10px; padding: 2px 6px; margin-left: 6px; font-weight: bold; }
+    .ai-tag { display: inline-block; background: var(--sg-green-tint); color: var(--sg-green); border-radius: 4px; font-size: 10px; padding: 2px 6px; margin-left: 6px; font-weight: bold; }
 
-    .no-results { text-align: center; padding: 24px 0; color: #9CA3AF; font-size: 15px; }
+    .no-results { text-align: center; padding: 24px 0; color: var(--sg-faint); font-size: 15px; }
 
     .btn-submit-all {
       width: 100%; padding: 18px;
-      background: linear-gradient(135deg, #1B2A4A, #2D5F8A);
-      color: white; border: none; border-radius: 12px;
+      background: var(--sg-primary);
+      color: var(--sg-on-primary); border: none; border-radius: 12px;
       font-size: 17px; font-weight: bold; cursor: pointer; min-height: 56px;
       letter-spacing: 1px; margin-top: 16px;
     }
     .btn-submit-all:active { opacity: 0.88; }
 
     #result, #m-result { text-align: center; margin-top: 12px; font-size: 14px; min-height: 20px; font-weight: bold; }
-    .success { color: #15803D; }
-    .error-msg { color: #DC2626; }
+    .success { color: var(--sg-green); }
+    .error-msg { color: var(--sg-red); }
 
     .method-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
     .method-tab {
       flex: 1; text-align: center; padding: 10px; border-radius: 8px;
-      font-size: 13px; font-weight: bold; color: #9CA3AF; background: #F3F4F6; cursor: pointer;
+      font-size: 13px; font-weight: bold; color: var(--sg-faint); background: var(--sg-sunk); cursor: pointer;
     }
-    .method-tab.active { background: #1B2A4A; color: white; }
+    .method-tab.active { background: var(--sg-primary); color: var(--sg-on-primary); }
 
-    .expense-item { border-left: 4px solid #2D5F8A; border-radius: 0 10px 10px 0; background: #F9FAFB; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-    .expense-item.ホテル { border-color: #C8A951; }
-    .expense-item.交際費 { border-color: #DC2626; }
-    .expense-item.その他 { border-color: #6B7280; }
-    .exp-tag { font-size: 11px; font-weight: bold; color: #2D5F8A; margin-bottom: 2px; }
-    .exp-desc { font-size: 14px; color: #1B2A4A; font-weight: bold; }
-    .exp-date { font-size: 12px; color: #9CA3AF; margin-top: 2px; }
-    .exp-amount { font-size: 17px; font-weight: bold; color: #1B2A4A; text-align: right; }
-    .btn-del { font-size: 12px; color: #DC2626; background: none; border: none; cursor: pointer; margin-top: 6px; display: block; text-align: right; padding: 4px; }
-    .empty-msg { text-align: center; color: #9CA3AF; font-size: 14px; padding: 32px 0; }
+    .expense-item { border-left: 4px solid var(--sg-primary); border-radius: 0 10px 10px 0; background: var(--sg-sunk); padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .expense-item.ホテル { border-color: var(--sg-amber); }
+    .expense-item.交際費 { border-color: var(--sg-red); }
+    .expense-item.その他 { border-color: var(--sg-faint); }
+    .exp-tag { font-size: 11px; font-weight: bold; color: var(--sg-blue); margin-bottom: 2px; }
+    .exp-desc { font-size: 14px; color: var(--sg-ink); font-weight: bold; }
+    .exp-date { font-size: 12px; color: var(--sg-faint); margin-top: 2px; }
+    .exp-amount { font-size: 17px; font-weight: bold; color: var(--sg-ink); text-align: right; }
+    .btn-del { font-size: 12px; color: var(--sg-red); background: none; border: none; cursor: pointer; margin-top: 6px; display: block; text-align: right; padding: 4px; }
+    .empty-msg { text-align: center; color: var(--sg-faint); font-size: 14px; padding: 32px 0; }
 
-    .year-fixed { font-size: 14px; color: #9CA3AF; margin-bottom: 10px; }
+    .year-fixed { font-size: 14px; color: var(--sg-faint); margin-bottom: 10px; }
     .btn-pdf {
       width: 100%; padding: 16px; margin-top: 4px;
-      background: linear-gradient(135deg, #2D5F8A, #1B2A4A);
-      color: white; border: none; border-radius: 12px;
+      background: var(--sg-primary);
+      color: var(--sg-on-primary); border: none; border-radius: 12px;
       font-size: 15px; font-weight: bold; cursor: pointer;
     }
     .btn-pdf:active { opacity: 0.88; }
 
-  </style>
+  
+  /* ═══ 共通の見た目（sieg-theme.css）に合わせる ═══
+     色は上ですべて --sg-* につないである。ここでは形と「選択中」の見せ方をそろえる。 */
+  body { background: var(--sg-bg); color: var(--sg-ink); }
+  #staff-select-screen { background: var(--sg-bg); }
+  .ss-title { color: var(--sg-ink); }
+  .ss-sub, .ss-loading { color: var(--sg-mute); }
+  .ss-btn { background: var(--sg-surface); color: var(--sg-ink); box-shadow: var(--sg-lift); border: 1px solid var(--sg-hair); border-radius: var(--sg-r-sm); }
+  .ss-btn:active { background: var(--sg-primary); color: var(--sg-on-primary); }
+  /* 上の帯（紺のグラデーション）をやめ、ポータルと同じ白いカードに */
+  .header { background: var(--sg-surface); box-shadow: var(--sg-lift); border-radius: var(--sg-r); margin: 8px auto 0; width: calc(100% - 32px); max-width: 448px; padding: 16px 18px; }
+  .header-label { color: var(--sg-amber); }
+  .header-name { color: var(--sg-ink); }
+  .header-switch, .header-month, .header-total-label { color: var(--sg-mute); }
+  .header-total-val { color: var(--sg-ink); }
+  .content { padding-bottom: calc(24px + var(--sg-tabbar-h)); }
+  .card { border-radius: var(--sg-r); }
+  .item-chip, .upload-btn, .result-card, select, input[type="text"], input[type="date"], input[type="number"],
+  .btn-submit-all, .btn-analyze, .btn-pdf, .method-tab { border-radius: var(--sg-r-sm); }
+  .item-chip.selected { background: var(--sg-primary); border-color: var(--sg-primary); color: var(--sg-on-primary); }
+  .preview-clear { color: #fff; }
+</style>
 </head>
 <body>
 
@@ -194,11 +210,11 @@
     </div>
   </div>
 
-  <div class="tabs">
-    <div class="tab active" onclick="switchTab('input')">＋ 新規入力</div>
-    <div class="tab" onclick="switchTab('history')">履歴</div>
-    <div class="tab" onclick="switchTab('settings')">設定</div>
-  </div>
+  <nav class="tabs sg-tabbar" aria-label="画面の切り替え">
+    <button type="button" class="tab sg-tab active" onclick="switchTab('input')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>新規入力</button>
+    <button type="button" class="tab sg-tab" onclick="switchTab('history')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>履歴</button>
+    <button type="button" class="tab sg-tab" onclick="switchTab('settings')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>設定</button>
+  </nav>
 
   <div class="content">
 
@@ -239,7 +255,7 @@
 
         <div id="results-section" style="display:none;">
           <div class="card">
-            <div class="card-title">📋 読み取り結果 <span style="color:#2D5F8A;">（内容を入力してください）</span></div>
+            <div class="card-title">📋 読み取り結果 <span style="color:var(--sg-blue);">（内容を入力してください）</span></div>
             <div id="results-list"></div>
           </div>
           <button class="btn-submit-all" id="btn-submit-all" onclick="submitAll()">選択した項目を一括送信</button>
@@ -294,7 +310,7 @@
     <div id="page-settings" class="page">
       <div class="card">
         <div class="card-title">📅 対象年月の変更</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px;">月を選ぶと自動でその月に切り替わります（データはリセットされます）。</p>
+        <p style="font-size:13px;color:var(--sg-mute);margin-bottom:12px;">月を選ぶと自動でその月に切り替わります（データはリセットされます）。</p>
         <div class="year-fixed" id="year-note">対象年：月を選ぶと自動で決まります（12月に1月を選ぶと翌年）</div>
         <label>対象月</label>
         <select id="sel-month" onchange="updateMonth()">
@@ -309,7 +325,7 @@
 
       <div class="card">
         <div class="card-title">📄 PDF保存</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px;">現在表示中のスタッフの経費精算書をPDFにしてGoogle Driveへ保存します。</p>
+        <p style="font-size:13px;color:var(--sg-mute);margin-bottom:12px;">現在表示中のスタッフの経費精算書をPDFにしてGoogle Driveへ保存します。</p>
         <button class="btn-pdf" onclick="exportPdf()">📄 PDFをGoogle Driveへ保存</button>
         <div id="pdf-result" style="margin-top:10px;font-size:13px;text-align:center;"></div>
       </div>
@@ -757,32 +773,32 @@
       startApp();
       return;
     }
-    document.getElementById('reset-result').style.color = '#6B7280';
+    document.getElementById('reset-result').style.color = 'var(--sg-mute)';
     document.getElementById('reset-result').textContent = '切り替え中...';
     callApi('updateYearMonth', { staffName: currentStaff, year: year, month: month })
       .then(function(ym) {
         document.getElementById('hdr-month').textContent = ym;
         document.getElementById('hdr-total').textContent = '¥0';
-        document.getElementById('reset-result').style.color = '#15803D';
+        document.getElementById('reset-result').style.color = 'var(--sg-green)';
         document.getElementById('reset-result').textContent = '✅ ' + ym + ' にリセットしました';
       })
       .catch(function(err) {
-        document.getElementById('reset-result').style.color = '#DC2626';
+        document.getElementById('reset-result').style.color = 'var(--sg-red)';
         document.getElementById('reset-result').textContent = '❌ ' + err.message;
       });
   }
 
   function exportPdf() {
     var el = document.getElementById('pdf-result');
-    el.style.color = '#6B7280';
+    el.style.color = 'var(--sg-mute)';
     el.textContent = '保存中...';
     callApi('exportStaffPdfToDrive', { staffName: currentStaff }, 60000)
       .then(function(msg) {
-        el.style.color = '#15803D';
+        el.style.color = 'var(--sg-green)';
         el.textContent = '✅ ' + msg;
       })
       .catch(function(err) {
-        el.style.color = '#DC2626';
+        el.style.color = 'var(--sg-red)';
         el.textContent = '❌ ' + err.message;
       });
   }

@@ -1,0 +1,94 @@
+/* ═══════════════════════════════════════════════════════════════
+   sieg-theme.css — Sieg 業務ポータルと各ツールで共通の見た目
+
+   正本は sieg-portal/sieg-theme.css。各ツールのリポジトリには同じ内容を
+   コピーして置いている（gas-client.js・sieg-nav.js と同じ運用）。
+   直したら全部にコピーし直すこと。
+
+   配色はポータル本体（index.html）と同じ値。スマホがダークモードなら
+   自動で暗い配色になる。各ツールの CSS は、色をここの --sg-* で指定する。
+
+     --sg-bg       画面の地          --sg-surface  カードの地
+     --sg-sunk     入力欄・チップの地  --sg-hair     区切り線・枠線
+     --sg-ink      文字              --sg-ink2     少し弱い文字
+     --sg-mute     説明文            --sg-faint    いちばん弱い文字
+     --sg-primary  主ボタン・選択中の地（紺。暗い配色では明るい色）
+     --sg-on-primary  主ボタンの上の文字
+     --sg-amber / --sg-red / --sg-blue / --sg-teal / --sg-green  各色（*-tint は薄い地）
+     --sg-sun / --sg-sat  カレンダーの日曜・土曜
+     --sg-lift     カードの影        --sg-r / --sg-r-sm  角丸（カード / ボタン）
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --sg-bg: #EFF1F4; --sg-surface: #FFFFFF; --sg-sunk: #F4F6F8;
+  --sg-ink: #0E1A2C; --sg-ink2: #3E4A5B; --sg-mute: #6B7584; --sg-faint: #9AA3AF;
+  --sg-hair: #E3E6EA; --sg-hair2: #ECEEF1;
+  --sg-primary: #0E1A2C; --sg-on-primary: #FFFFFF;
+  --sg-amber: #A06400; --sg-amber-tint: #FAF0DF;
+  --sg-red: #AE2B24;   --sg-red-tint: #F9EAE8;
+  --sg-blue: #294780;  --sg-blue-tint: #E9EEF6;
+  --sg-teal: #16645C;  --sg-teal-tint: #E4F0EE;
+  --sg-green: #1B6541; --sg-green-tint: #E6F0EA;
+  --sg-sun: #B3261E; --sg-sat: #1F5FB0;
+  --sg-scrim: rgba(8,13,21,.42);
+  --sg-lift: 0 1px 1px rgba(14,26,44,.035), 0 5px 16px rgba(14,26,44,.05);
+  --sg-r: 18px; --sg-r-sm: 12px;
+  --sg-font: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sg-bg: #0C1015; --sg-surface: #161B23; --sg-sunk: #1C222B;
+    --sg-ink: #E9EEF4; --sg-ink2: #B7C1CD; --sg-mute: #8B95A3; --sg-faint: #5F6978;
+    --sg-hair: #262D37; --sg-hair2: #1E242C;
+    --sg-primary: #E9EEF4; --sg-on-primary: #0C1015;
+    --sg-amber: #E7AB44; --sg-amber-tint: #2A2115;
+    --sg-red: #F07B6F;   --sg-red-tint: #2B1917;
+    --sg-blue: #84A9E3;  --sg-blue-tint: #182130;
+    --sg-teal: #5FC6B9;  --sg-teal-tint: #142625;
+    --sg-green: #5FC48C; --sg-green-tint: #152621;
+    --sg-sun: #F07B6F; --sg-sat: #84A9E3;
+    --sg-scrim: rgba(0,0,0,.6);
+    --sg-lift: none;
+    color-scheme: dark;
+  }
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--sg-bg);
+  color: var(--sg-ink);
+  font-family: var(--sg-font);
+  font-feature-settings: "palt";
+  letter-spacing: .012em;
+}
+:focus-visible { outline: 2px solid var(--sg-amber); outline-offset: 2px; }
+
+/* ═══ 画面下のタブ（ポータルと同じ形） ═══
+   <nav class="sg-tabbar"><button class="sg-tab" aria-selected="true">…</button>…</nav>
+   使うページは、下に隠れないよう本文に padding-bottom: var(--sg-tabbar-h) を足す。 */
+:root { --sg-tabbar-h: calc(64px + env(safe-area-inset-bottom)); }
+.sg-tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  max-width: 560px; margin: 0 auto;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  padding: 8px 0 calc(9px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--sg-surface) 90%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(22px); backdrop-filter: saturate(180%) blur(22px);
+  border-top: 1px solid var(--sg-hair);
+}
+.sg-tab {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 3px 0; border: none; background: none; cursor: pointer;
+  font: 800 10.5px/1.2 var(--sg-font); letter-spacing: .05em;
+  color: var(--sg-faint); transition: color .18s;
+}
+.sg-tab svg {
+  width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; fill: none;
+  stroke-linecap: round; stroke-linejoin: round; transition: stroke-width .18s, transform .18s;
+}
+.sg-tab[aria-selected="true"], .sg-tab.active { color: var(--sg-ink); }
+.sg-tab[aria-selected="true"] svg, .sg-tab.active svg { stroke-width: 2.35; transform: translateY(-1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-tab, .sg-tab svg { transition: none; }
+}
