@@ -321,6 +321,7 @@
 </div>
 
 <script src="gas-client.js"></script>
+<script src="sieg-nav.js"></script>
 <script>
   // ▼▼▼ GASのWebアプリURL（/execで終わるもの） ▼▼▼
   var GAS_URL = "https://script.google.com/macros/s/AKfycbzyXEYU_0VhvEpnmZx3JWaxXRdOEP-Lam9R9Fxwv4nVRr6ExzQrBmdO-rgUlwGkcgzU/exec";
@@ -397,6 +398,9 @@
     document.getElementById('ss-buttons').innerHTML = '<div class="ss-loading">読み込み中…</div>';
     callApi('getStaffList')
       .then(function(list) {
+        // ポータルで選んだ名前がこのツールの対象なら、選び直さずにそのまま開く
+        var fromPortal = SiegNav.staff(list);
+        if (fromPortal) { selectStaff(fromPortal); return; }
         var box = document.getElementById('ss-buttons');
         box.innerHTML = '';
         list.forEach(function(name) {
