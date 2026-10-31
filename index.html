@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>経費精算申請フォーム</title>
 <meta name="theme-color" content="#EFF1F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C1015" media="(prefers-color-scheme: dark)">
@@ -55,7 +55,7 @@
     .page.active { display: block; }
 
     .card { background: var(--sg-surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: var(--sg-lift); }
-    .card-title { font-size: 11px; font-weight: bold; color: var(--sg-faint); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px; }
+    .card-title { font-size: 11px; font-weight: bold; color: var(--sg-mute); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px; }
 
     label { display: block; font-size: 12px; font-weight: bold; color: var(--sg-mute); margin-bottom: 6px; }
     select, input[type="text"], input[type="date"], input[type="number"] {
@@ -83,7 +83,7 @@
     .upload-btn:active { background: var(--sg-blue-tint); border-color: var(--sg-primary); }
     .upload-btn-icon { font-size: 30px; margin-bottom: 6px; }
     .upload-btn-text { font-size: 14px; color: var(--sg-blue); font-weight: bold; }
-    .upload-sub { font-size: 12px; color: var(--sg-faint); margin-top: 8px; text-align: center; }
+    .upload-sub { font-size: 12px; color: var(--sg-mute); margin-top: 8px; text-align: center; }
     .preview-wrap { position: relative; margin-top: 14px; display: none; }
     .preview-wrap img { width: 100%; border-radius: 10px; max-height: 220px; object-fit: contain; background: var(--sg-sunk); }
     .preview-clear { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.55); color: var(--sg-on-primary); border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 15px; cursor: pointer; }
@@ -105,11 +105,11 @@
     }
     .result-card.selected { border-color: var(--sg-primary); background: var(--sg-blue-tint); }
     .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .result-num { font-size: 11px; font-weight: bold; color: var(--sg-faint); }
+    .result-num { font-size: 11px; font-weight: bold; color: var(--sg-mute); }
     .result-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--sg-hair); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
     .result-check.on { background: var(--sg-primary); border-color: var(--sg-primary); color: var(--sg-on-primary); }
     .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .result-field label { font-size: 11px; color: var(--sg-faint); margin-bottom: 4px; }
+    .result-field label { font-size: 11px; color: var(--sg-mute); margin-bottom: 4px; }
     .result-field input, .result-field select {
       width: 100%; padding: 10px; border: 1.5px solid var(--sg-hair);
       border-radius: 8px; font-size: 15px; color: var(--sg-ink);
@@ -118,7 +118,7 @@
     .result-field.full { grid-column: 1 / -1; }
     .ai-tag { display: inline-block; background: var(--sg-green-tint); color: var(--sg-green); border-radius: 4px; font-size: 10px; padding: 2px 6px; margin-left: 6px; font-weight: bold; }
 
-    .no-results { text-align: center; padding: 24px 0; color: var(--sg-faint); font-size: 15px; }
+    .no-results { text-align: center; padding: 24px 0; color: var(--sg-mute); font-size: 15px; }
 
     .btn-submit-all {
       width: 100%; padding: 18px;
@@ -136,7 +136,7 @@
     .method-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
     .method-tab {
       flex: 1; text-align: center; padding: 10px; border-radius: 8px;
-      font-size: 13px; font-weight: bold; color: var(--sg-faint); background: var(--sg-sunk); cursor: pointer;
+      font-size: 13px; font-weight: bold; color: var(--sg-mute); background: var(--sg-sunk); cursor: pointer;
     }
     .method-tab.active { background: var(--sg-primary); color: var(--sg-on-primary); }
 
@@ -146,12 +146,12 @@
     .expense-item.その他 { border-color: var(--sg-faint); }
     .exp-tag { font-size: 11px; font-weight: bold; color: var(--sg-blue); margin-bottom: 2px; }
     .exp-desc { font-size: 14px; color: var(--sg-ink); font-weight: bold; }
-    .exp-date { font-size: 12px; color: var(--sg-faint); margin-top: 2px; }
+    .exp-date { font-size: 12px; color: var(--sg-mute); margin-top: 2px; }
     .exp-amount { font-size: 17px; font-weight: bold; color: var(--sg-ink); text-align: right; }
     .btn-del { font-size: 12px; color: var(--sg-red); background: none; border: none; cursor: pointer; margin-top: 6px; display: block; text-align: right; padding: 4px; }
-    .empty-msg { text-align: center; color: var(--sg-faint); font-size: 14px; padding: 32px 0; }
+    .empty-msg { text-align: center; color: var(--sg-mute); font-size: 14px; padding: 32px 0; }
 
-    .year-fixed { font-size: 14px; color: var(--sg-faint); margin-bottom: 10px; }
+    .year-fixed { font-size: 14px; color: var(--sg-mute); margin-bottom: 10px; }
     .btn-pdf {
       width: 100%; padding: 16px; margin-top: 4px;
       background: var(--sg-primary);
