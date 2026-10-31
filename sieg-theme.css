@@ -92,3 +92,60 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sg-tab, .sg-tab svg { transition: none; }
 }
+
+/* ═══ 各ツールで共通の画面の形 ═══
+   どのツールも同じ形にそろえて「1つのアプリ」に見えるようにする。
+
+   1. 本文の幅 … 全ツール 560px（下のタブと同じ）。本文の外枠に .sg-page を付ける
+   2. 画面の上 … 小さい見出し「Sieg 業務ポータル」・ツール名・右上に自分の名前
+        <header class="sg-head">
+          <div><div class="sg-eyebrow">Sieg 業務ポータル</div><h1 class="sg-title">ツール名</h1>
+               <div class="sg-sub">2026年10月 など（なくてもよい）</div></div>
+          <button class="sg-who" type="button"><i>福</i><span>福山</span></button>
+        </header>
+   3. アイコン … 絵文字は使わず、線のアイコン（<svg class="sg-ic" viewBox="0 0 24 24">…</svg>）
+   4. 送信ボタン … 画面の下に固定（下のタブがあればその上）
+        <div class="sg-actionbar"><button class="sg-primary">送信する</button></div>
+      本文の下が隠れないよう、body に .has-actionbar を付ける（下のタブもあるときは .has-tabbar も） */
+:root { --sg-page-w: 560px; --sg-actionbar-h: calc(76px + env(safe-area-inset-bottom)); }
+.sg-page { max-width: var(--sg-page-w); margin-left: auto; margin-right: auto; }
+
+.sg-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 8px 0 14px; }
+.sg-head > div:first-child { min-width: 0; }
+.sg-eyebrow { font-size: 11px; letter-spacing: .14em; color: var(--sg-mute); font-weight: 700; }
+.sg-title { margin: 2px 0 0; font-size: 26px; font-weight: 900; letter-spacing: .04em; line-height: 1.2; color: var(--sg-ink); }
+.sg-sub { font-size: 13px; color: var(--sg-mute); font-weight: 700; margin-top: 2px; }
+.sg-who {
+  display: inline-flex; align-items: center; gap: 8px; flex: none; max-width: 52%;
+  min-height: 42px; padding: 0 14px 0 5px; border-radius: 999px;
+  background: var(--sg-surface); border: 1px solid var(--sg-hair); box-shadow: var(--sg-lift);
+  font: 800 14px/1.2 var(--sg-font); color: var(--sg-ink); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.sg-who > i {
+  width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: var(--sg-primary); color: var(--sg-on-primary); font-style: normal; font-weight: 900; font-size: 14px;
+}
+.sg-who > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-who:active { transform: scale(.97); }
+
+.sg-ic { width: 1.15em; height: 1.15em; vertical-align: -.2em; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.sg-actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+  padding: 10px max(16px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--sg-surface) 92%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--sg-hair);
+}
+.sg-actionbar > * { display: block; width: 100%; max-width: calc(var(--sg-page-w) - 32px); margin: 0 auto; }
+.sg-actionbar[hidden], .sg-actionbar > [hidden] { display: none; }
+.has-tabbar .sg-actionbar { bottom: var(--sg-tabbar-h); padding-bottom: 10px; border-top: 1px solid var(--sg-hair); }
+body.has-actionbar { padding-bottom: calc(24px + var(--sg-actionbar-h)) !important; }
+body.has-actionbar.has-tabbar { padding-bottom: calc(24px + var(--sg-actionbar-h) + var(--sg-tabbar-h)) !important; }
+.sg-primary {
+  min-height: 52px; border: 0; border-radius: 14px; background: var(--sg-primary); color: var(--sg-on-primary);
+  font: 900 16px/1.2 var(--sg-font); letter-spacing: .04em; cursor: pointer; transition: transform .06s, filter .12s;
+}
+.sg-primary:active { filter: brightness(.88); transform: scale(.985); }
+.sg-primary:disabled { opacity: .45; transform: none; filter: none; }
