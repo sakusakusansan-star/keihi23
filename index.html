@@ -71,6 +71,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
     .upload-btn:active { background: var(--sg-blue-tint); border-color: var(--sg-primary); }
+    .analyze-time { font-size: 12px; color: var(--sg-mute); text-align: right; margin-top: 6px; }
     .upload-btn-icon { font-size: 30px; margin-bottom: 6px; color: var(--sg-blue); }
     .upload-btn-icon .sg-ic { stroke-width: 1.7; }
     .card-title .sg-ic { margin-right: 2px; }
@@ -244,6 +245,7 @@
           <div class="card">
             <div class="card-title"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 11h6M9 15h4"/></svg> 読み取り結果 <span style="color:var(--sg-blue);">（内容を入力してください）</span></div>
             <div id="results-list"></div>
+            <div class="analyze-time" id="analyze-time"></div>
           </div>
           <div id="result"></div>
         </div>
@@ -503,8 +505,10 @@
   }
 
   // 送信前に画像を縮小・JPEG圧縮する（スマホ写真をそのまま送るとアップロードとGeminiの解析が遅くなりタイムアウトする）
-  var MAX_IMAGE_SIDE = 2000;
-  var JPEG_QUALITY = 0.85;
+  // Gemini は画像を 768px ごとの区画に分けて読むので、長い辺 1536px（2×2区画）までにすると
+  // 2000px（約3×3区画）より読む量が半分以下になり速い。領収書の文字はこの大きさで十分読める
+  var MAX_IMAGE_SIDE = 1536;
+  var JPEG_QUALITY = 0.82;
 
   function onFileSelected(input) {
     if (!input.files || !input.files[0]) return;
@@ -555,10 +559,19 @@
     document.getElementById('analyzing-wrap').style.display = 'block';
     document.getElementById('results-section').style.display = 'none';
 
+    // 待っている間は経過秒数を出す（どれくらいかかったかも残す）
+    var started = Date.now(), textEl = document.querySelector('#analyzing-wrap .analyzing-text');
+    var baseText = 'Geminiが領収書を解析中';
+    textEl.textContent = baseText + '…';
+    var tick = setInterval(function() { textEl.textContent = baseText + '…' + Math.round((Date.now() - started) / 1000) + '秒'; }, 1000);
+    function took() { clearInterval(tick); return Math.round((Date.now() - started) / 100) / 10; }
+
     callApi('analyzeReceipts', { base64Image: base64Data, mimeType: mimeType }, 120000)
       .then(function(results) {
+        var sec = took();
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
+        document.getElementById('analyze-time').textContent = '読み取りにかかった時間：' + sec + '秒';
 
         if (!results || results.length === 0) {
           document.getElementById('results-list').innerHTML = '<div class="no-results">領収書が読み取れませんでした</div>';
@@ -571,6 +584,7 @@
         document.getElementById('results-section').style.display = 'block';
       })
       .catch(function(err) {
+        took();
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
         alert('解析エラー: ' + err.message);
