@@ -144,6 +144,27 @@
     .exp-amount { font-size: 17px; font-weight: bold; color: var(--sg-ink); text-align: right; }
     .btn-del { font-size: 12px; color: var(--sg-red); background: none; border: none; cursor: pointer; margin-top: 6px; display: block; text-align: right; padding: 4px; }
     .empty-msg { text-align: center; color: var(--sg-mute); font-size: 14px; padding: 32px 0; }
+    #hist-month { margin-bottom: 10px; }
+    /* 選ぶ欄に ▼ を描く（ブラウザの ▼ は消しているため） */
+    select { -webkit-appearance: none; appearance: none; padding-right: 40px;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236B7584' stroke-width='2' stroke-linecap='round'/></svg>");
+      background-repeat: no-repeat; background-position: right 14px center; }
+    #hist-month[hidden] { display: none; }
+    .hist-sum { font-size: 13px; color: var(--sg-mute); margin: 0 2px 10px; }
+    .hist-sum b { color: var(--sg-ink); font-size: 15px; }
+    .hist-sum:empty { display: none; }
+    .exp-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+    .btn-edit { font-size: 13px; font-weight: 700; color: var(--sg-blue); background: var(--sg-blue-tint); border: none; border-radius: 8px; min-height: 36px; padding: 0 12px; cursor: pointer; }
+    .exp-actions .btn-del { margin: 0; min-height: 36px; padding: 0 10px; font-weight: 700; }
+    .expense-item.editing { display: block; }
+    .exp-edit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .exp-edit label { display: block; font-size: 12px; color: var(--sg-mute); margin-bottom: 4px; }
+    .exp-edit .full { grid-column: 1 / -1; }
+    .exp-edit-btns { grid-column: 1 / -1; display: flex; gap: 8px; }
+    .exp-edit-btns button { flex: 1; min-height: 44px; border-radius: 10px; font-weight: 800; font-size: 14px; cursor: pointer; }
+    .exp-save { background: var(--sg-primary); color: var(--sg-on-primary); border: none; }
+    .exp-cancel { background: var(--sg-surface); color: var(--sg-ink); border: 1px solid var(--sg-hair); }
+    .exp-edit-msg { grid-column: 1 / -1; font-size: 13px; color: var(--sg-red); }
 
     .year-fixed { font-size: 14px; color: var(--sg-mute); margin-bottom: 10px; }
     .btn-pdf {
@@ -288,7 +309,10 @@
     <!-- 履歴 -->
     <div id="page-history" class="page">
       <div class="card">
-        <div class="card-title"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M2 20h20"/></svg> 今月の経費一覧</div>
+        <div class="card-title"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M2 20h20"/></svg> 経費一覧</div>
+        <!-- 月を選ぶ（前の月は見るだけ。直せるのは今の月だけ） -->
+        <select id="hist-month" onchange="onHistMonth()" aria-label="見る月" hidden></select>
+        <div class="hist-sum" id="hist-sum"></div>
         <div id="expense-list"><div class="empty-msg">読み込み中...</div></div>
       </div>
     </div>
@@ -712,7 +736,58 @@
       .then(function() { lockButton('btn-submit-manual', false); });
   }
 
-  function loadHistory() {
+  // ─── 月の一覧（前の月も見られる） ───
+  // GAS が月の切り替え前・PDF保存のときに「経費履歴」へ写した月を選べる。
+  // 古い GAS（getExpenseMonths が無い）のときは、今の月だけを出す。
+  var histMonths = [], histYm = '';   // '' は今の月
+  function loadMonths() {
+    var sel = document.getElementById('hist-month');
+    return callApi('getExpenseMonths', { staffName: currentStaff })
+      .then(function(months) {
+        histMonths = months || [];
+        if (histMonths.length < 2 && !histYm) { sel.hidden = true; return; }
+        sel.innerHTML = histMonths.map(function(m) {
+          var v = m.current ? '' : m.yearMonth;
+          return '<option value="' + esc(v) + '"' + (v === histYm ? ' selected' : '') + '>' + esc(m.yearMonth) +
+            (m.current ? '（今の月）' : '') + '　' + m.count + '件・¥' + Number(m.total).toLocaleString() + '</option>';
+        }).join('');
+        sel.hidden = false;
+      })
+      .catch(function() { sel.hidden = true; });
+  }
+  function onHistMonth() {
+    histYm = document.getElementById('hist-month').value;
+    loadHistory(true);
+  }
+
+  // 前の月：経費履歴から読むだけ（直したり消したりはしない）
+  function loadArchived() {
+    var listEl = document.getElementById('expense-list');
+    listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    callApi('getArchivedExpenses', { staffName: currentStaff, yearMonth: histYm })
+      .then(function(expenses) {
+        historyItems = [];
+        var total = 0, html = '';
+        (expenses || []).forEach(function(e) {
+          total += Number(e.amount) || 0;
+          html += '<div class="expense-item ' + esc(e.item || 'その他') + '">';
+          html += '<div><div class="exp-tag">' + esc(e.item || '—') + '</div>';
+          html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
+          html += '<div class="exp-date">' + esc(e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—') + '</div></div>';
+          html += '<div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div></div>';
+        });
+        listEl.innerHTML = html || '<div class="empty-msg">この月の経費はありません</div>';
+        document.getElementById('hist-sum').innerHTML = esc(histYm) + 'の合計 <b>¥' + total.toLocaleString() + '</b>　（前の月は見るだけです）';
+      })
+      .catch(function(err) {
+        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + esc(err.message) + '</div>';
+      });
+  }
+
+  function loadHistory(keepMonths) {
+    if (!keepMonths) loadMonths();
+    if (histYm) { loadArchived(); return; }
+    document.getElementById('hist-sum').innerHTML = '';
     var listEl = document.getElementById('expense-list');
     listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
     callApi('getExpenses', { staffName: currentStaff })
@@ -735,7 +810,8 @@
           html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
           html += '<div class="exp-date">' + esc(dateStr) + '</div></div>';
           html += '<div><div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div>';
-          html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">削除</button></div>';
+          html += '<div class="exp-actions"><button class="btn-edit" onclick="editExpense(' + i + ')">編集</button>';
+          html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">削除</button></div></div>';
           html += '</div>';
         });
         listEl.innerHTML = html;
@@ -777,6 +853,62 @@
       .catch(function(err) {
         alert('削除エラー: ' + err.message);
         loadHistory();
+      });
+  }
+
+  // ─── 1件を直す（今の月だけ） ───
+  function ymd(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function editExpense(idx) {
+    var e = historyItems[idx];
+    var el = document.querySelectorAll('#expense-list .expense-item')[idx];
+    if (!e || !el) return;
+    el.classList.add('editing');
+    el.innerHTML = '<div class="exp-edit">' +
+      '<div><label>項目</label><select id="ed-item">' + ['駐車場', 'ホテル', '交際費', 'その他'].map(function(v) {
+        return '<option' + (v === e.item ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select></div>' +
+      '<div><label>日付</label><input type="date" id="ed-date" value="' + esc(ymd(e.date)) + '"></div>' +
+      '<div><label>金額（円）</label><input type="number" id="ed-amount" inputmode="numeric" value="' + esc(Number(e.amount) || '') + '"></div>' +
+      '<div class="full"><label>内容・摘要</label><input type="text" id="ed-desc" value="' + esc(e.description || '') + '"></div>' +
+      '<div class="exp-edit-msg" id="ed-msg"></div>' +
+      '<div class="exp-edit-btns"><button type="button" class="exp-cancel" onclick="loadHistory(true)">やめる</button>' +
+      '<button type="button" class="exp-save" id="ed-save" onclick="saveEdit(' + idx + ')">保存する</button></div></div>';
+  }
+  function saveEdit(idx) {
+    var target = historyItems[idx];
+    var data = {
+      item: document.getElementById('ed-item').value,
+      date: document.getElementById('ed-date').value,
+      amount: Number(document.getElementById('ed-amount').value),
+      description: document.getElementById('ed-desc').value.trim()
+    };
+    var msg = document.getElementById('ed-msg');
+    if (!data.date || !(data.amount > 0)) { msg.textContent = '日付と金額を入れてください'; return; }
+    var btn = document.getElementById('ed-save');
+    btn.disabled = true; btn.textContent = '保存中…';
+    // 削除と同じく、直す直前に最新の一覧を取り直して同じ経費の行を使う
+    callApi('getExpenses', { staffName: currentStaff })
+      .then(function(latest) {
+        latest = latest || [];
+        var hit = latest.filter(function(x) { return x.row === target.row && sameExpense(x, target); })[0] ||
+                  latest.filter(function(x) { return sameExpense(x, target); })[0];
+        if (!hit) throw new Error('この経費は見つかりませんでした（すでに削除されたか、内容が変わっています）');
+        return callApi('updateExpense', {
+          staffName: currentStaff, row: hit.row, data: data,
+          expect: { item: hit.item, date: hit.date, amount: hit.amount, description: hit.description }
+        });
+      })
+      .then(function(res) {
+        if (res && res.total != null) document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
+        loadHistory();
+      })
+      .catch(function(err) {
+        btn.disabled = false; btn.textContent = '保存する';
+        msg.textContent = '保存できませんでした：' + err.message;
       });
   }
 
