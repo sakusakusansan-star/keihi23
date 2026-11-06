@@ -149,3 +149,36 @@ body.has-actionbar.has-tabbar { padding-bottom: calc(24px + var(--sg-actionbar-h
 }
 .sg-primary:active { filter: brightness(.88); transform: scale(.985); }
 .sg-primary:disabled { opacity: .45; transform: none; filter: none; }
+
+/* ═══ 下の送信バーの案内（ボタンの上に1行）═══
+   <div class="sg-actionbar"><div class="sg-actionhint">日にちをえらんでください</div><button class="sg-primary">送信する</button></div>
+   押せないときはボタンを disabled にして、理由はボタンの文字ではなくこの1行に書く */
+.sg-actionhint { font-size: 12px; font-weight: 700; color: var(--sg-mute); text-align: center; line-height: 1.4; margin-bottom: 8px !important; }
+.sg-actionhint:empty { display: none !important; }
+
+/* ═══ うまくいかなかったとき ═══
+   GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む') が作る。
+   太字の見出し → スタッフ向けの短い案内 → 「詳しく（管理者向け）」→ やり直しボタン */
+.sg-err { margin: 10px 0; padding: 14px 16px; border-radius: var(--sg-r-sm); background: var(--sg-red-tint);
+  color: var(--sg-ink2); font-size: 14px; line-height: 1.6; text-align: left; }
+.sg-err > b { display: block; color: var(--sg-red); font-weight: 900; font-size: 15px; margin-bottom: 2px; }
+.sg-err details { margin-top: 8px; font-size: 12px; color: var(--sg-mute); line-height: 1.6; }
+.sg-err summary { cursor: pointer; font-weight: 700; }
+.sg-err button { display: block; margin-top: 12px; min-height: 42px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--sg-primary); color: var(--sg-on-primary); font: 800 14px/1 var(--sg-font); cursor: pointer; }
+
+/* ═══ 読み込み中（形だけの仮の枠）═══
+   <div class="sg-skel card"></div> <div class="sg-skel line"></div> <span class="sg-skel word"></span>
+   どのツールも「読み込み中…」の文字だけにせず、出てくる中身と同じ形の枠を光らせる */
+.sg-skel { display: block; border-radius: 10px;
+  /* 地の色に関係なく見えるよう、文字色を薄く重ねる（画面の地でもカードの上でも、明るい・暗いどちらでも） */
+  background-color: color-mix(in srgb, var(--sg-ink) 7%, transparent);
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--sg-ink) 8%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%; background-repeat: no-repeat; animation: sg-shimmer 1.3s ease-in-out infinite; }
+.sg-skel.line { height: 14px; margin: 10px 0; }
+.sg-skel.line.short { width: 55%; }
+.sg-skel.card { height: 76px; margin: 10px 0; border-radius: var(--sg-r); }
+.sg-skel.word { display: inline-block; width: 6em; height: 1em; vertical-align: -.15em; border-radius: 6px; }
+.sg-skel-wrap { padding: 4px 0; }
+@keyframes sg-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) { .sg-skel { animation: none; } }

@@ -22,8 +22,12 @@
    ・retry: true は「2回走っても結果が変わらない操作」（読み込み・上書き）だけに付ける。
      GETは読み込みなので既定で再試行する。
    ・失敗したときの Error には次が付く
+       err.message    … スタッフ向けの短い案内（そのまま画面に出してよい）
+       err.detail     … 管理者向けの詳しい理由（GASの設定など）。画面では「詳しく」の中に入れる
        err.transient  … Google側の一時的な失敗だった
        err.maybeDone  … スクリプト本体は動いた（＝登録は済んでいる）かもしれない
+   ・読み込みに失敗した箇所の案内は GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む')
+     （sieg-theme.css の .sg-err。ボタンは data-sg-retry が付くので、呼び出し側でクリックを拾う）
    ═══════════════════════════════════════════════════════════════ */
 (function (global) {
   'use strict';
@@ -37,6 +41,16 @@
     for (var k in props) if (Object.prototype.hasOwnProperty.call(props, k)) err[k] = props[k];
     return err;
   }
+
+  // スタッフ向けの短い案内（詳しい理由は err.detail へ）
+  var MSG = {
+    setup: 'いまは使えません（設定の確認が必要です）。管理者に知らせてください。',
+    google: 'Google側が一時的に不安定でした。少し待って、もう一度お試しください。',
+    timeout: '時間がかかりすぎたので止めました。電波のよいところで、もう一度お試しください。',
+    network: 'つながりませんでした。電波のよいところで、もう一度お試しください。',
+    server: '応答を読み取れませんでした。少し待って、もう一度お試しください。'
+  };
+  function setup(detail) { return tagged(MSG.setup, { kind: 'deploy', detail: detail }); }
 
   function wait(ms) {
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
@@ -68,28 +82,28 @@
   function describeNonJson(text, status, finalUrl) {
     var t = String(text == null ? '' : text);
     if (/accounts\.google\.com|ServiceLogin|アカウントの選択|Choose an account|ログイン/i.test(t)) {
-      return tagged('Googleのログイン画面が返されました。GASの「デプロイを管理」で、アクセスできるユーザーを「全員」にしてください。', { kind: 'deploy' });
+      return setup('Googleのログイン画面が返されました。GASの「デプロイを管理」で、アクセスできるユーザーを「全員」にしてください。');
     }
     if (/承認が必要|Authorization is required|requires authorization/i.test(t)) {
-      return tagged('GAS側の承認が終わっていません。スクリプトエディタで関数を一度実行して権限を許可し、再デプロイしてください。', { kind: 'deploy' });
+      return setup('GAS側の承認が終わっていません。スクリプトエディタで関数を一度実行して権限を許可し、再デプロイしてください。');
     }
     if (isTransientGoogleFailure(status, finalUrl, t)) {
       // スクリプト本体は動いたあとで起きることがある
-      return tagged('Google側の一時的なエラー（' + (status || '応答なし') + '）で結果を受け取れませんでした。', { transient: true, maybeDone: true, kind: 'google' });
+      return tagged(MSG.google, { transient: true, maybeDone: true, kind: 'google', detail: 'Google側の一時的なエラー（' + (status || '応答なし') + '）で結果を受け取れませんでした。' });
     }
     if (/Script function not found/i.test(t)) {
-      return tagged('デプロイされているコードが古いようです。Apps Scriptの「デプロイを管理」→ 鉛筆（編集）→ バージョン「新バージョン」でデプロイし直してください（URLは変わりません）。', { kind: 'deploy' });
+      return setup('デプロイされているコードが古いようです。Apps Scriptの「デプロイを管理」→ 鉛筆（編集）→ バージョン「新バージョン」でデプロイし直してください（URLは変わりません）。');
     }
     if (/権限|permission|アクセスできません|Access denied/i.test(t)) {
-      return tagged('Webアプリを実行する権限がありません。デプロイの「アクセスできるユーザー」を確認してください。', { kind: 'deploy' });
+      return setup('Webアプリを実行する権限がありません。デプロイの「アクセスできるユーザー」を確認してください。');
     }
     if (/見つかりません|not found|does not exist|存在しません/i.test(t)) {
-      return tagged('デプロイURLが見つかりません。最新のデプロイURL（末尾 /exec）を設定してください。', { kind: 'deploy' });
+      return setup('デプロイURLが見つかりません。最新のデプロイURL（末尾 /exec）を設定してください。');
     }
     if (/^\s*</.test(t)) {
-      return tagged('サーバーがJSONではなくHTMLを返しました。デプロイ設定（アクセスできるユーザー＝全員）と、コード変更後の再デプロイを確認してください。', { kind: 'deploy' });
+      return setup('サーバーがJSONではなくHTMLを返しました。デプロイ設定（アクセスできるユーザー＝全員）と、コード変更後の再デプロイを確認してください。');
     }
-    return tagged('サーバーの応答を読めませんでした: ' + t.slice(0, 150), { kind: 'server' });
+    return tagged(MSG.server, { kind: 'server', detail: 'サーバーの応答を読めませんでした: ' + t.slice(0, 150) });
   }
 
   function requestOnce(url, init, timeoutMs, isPost) {
@@ -103,8 +117,7 @@
         settled = true;
         if (controller) { try { controller.abort(); } catch (e) {} }
         // 打ち切った時点でサーバー側は処理を終えているかもしれない
-        reject(tagged('通信がタイムアウトしました（' + Math.round(timeoutMs / 1000) + '秒）。電波の良いところでもう一度お試しください。',
-          { kind: 'timeout', maybeDone: isPost }));
+        reject(tagged(MSG.timeout, { kind: 'timeout', maybeDone: isPost, detail: '通信がタイムアウトしました（' + Math.round(timeoutMs / 1000) + '秒）。' }));
       });
 
       var status = 0, finalUrl = '';
@@ -130,7 +143,7 @@
           var msg = (err && err.message) ? err.message : String(err);
           // 電波切れのほか、応答の受け取り中に切れた場合もここに来る。
           // 一時的なことが多いので再試行の対象にする。
-          reject(tagged('サーバーに接続できませんでした（' + msg + '）。', { kind: 'network', transient: true, maybeDone: isPost }));
+          reject(tagged(MSG.network, { kind: 'network', transient: true, maybeDone: isPost, detail: 'サーバーに接続できませんでした（' + msg + '）。' }));
         });
     });
   }
@@ -151,10 +164,11 @@
           return wait(RETRY_WAIT_MS * n).then(function () { return attempt(n + 1); });
         }
         if (err.transient && maxAttempts > 1) {
-          err.message += '自動で' + n + '回試しましたが復旧しませんでした。少し時間をおいてお試しください。';
-        } else if (err.kind === 'network' && typeof navigator !== 'undefined' && navigator.onLine !== false) {
+          err.detail = (err.detail || '') + '自動で' + n + '回試しましたが復旧しませんでした。';
+        }
+        if (err.kind === 'network' && typeof navigator !== 'undefined' && navigator.onLine !== false) {
           // 電波はあるのに何度もつながらない＝デプロイ設定のことが多い
-          err.message += '電波が良いのに続く場合は、GASの「アクセスできるユーザー」が【全員】になっているか、URLが最新か確認してください。';
+          err.detail = (err.detail || '') + '電波が良いのに続く場合は、GASの「アクセスできるユーザー」が【全員】になっているか、URLが最新か確認してください。';
         }
         throw err;
       });
@@ -195,5 +209,15 @@
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   }
 
-  global.GasClient = { post: post, get: get, newId: newId };
+  // 読み込みに失敗した箇所に出す案内（sieg-theme.css の .sg-err）。
+  //   短い案内＋「詳しく」（管理者向け）＋やり直しボタン（data-sg-retry。押されたときの処理は呼び出し側）
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function errorHtml(err, title, retryLabel) {
+    var msg = err && err.message ? err.message : String(err || '');
+    return '<div class="sg-err" role="alert"><b>' + esc(title || 'うまくいきませんでした') + '</b>' + esc(msg)
+      + (err && err.detail ? '<details><summary>詳しく（管理者向け）</summary>' + esc(err.detail) + '</details>' : '')
+      + (retryLabel ? '<button type="button" data-sg-retry>' + esc(retryLabel) + '</button>' : '') + '</div>';
+  }
+
+  global.GasClient = { post: post, get: get, newId: newId, errorHtml: errorHtml, MSG: MSG };
 })(this);

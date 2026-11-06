@@ -224,7 +224,7 @@
     <div>
       <div class="sg-eyebrow">Sieg 業務ポータル</div>
       <h1 class="sg-title">経費精算</h1>
-      <div class="sg-sub"><span id="hdr-month">読み込み中...</span>　今月合計 <b class="hdr-total" id="hdr-total">¥—</b></div>
+      <div class="sg-sub"><span id="hdr-month"><span class="sg-skel word" aria-label="読み込み中"></span></span>　今月合計 <b class="hdr-total" id="hdr-total">¥—</b></div>
     </div>
     <button type="button" class="sg-who" onclick="switchStaff()" aria-label="別の人に切り替える"><i id="who-initial">?</i><span id="hdr-name">—</span></button>
   </header>
@@ -330,7 +330,7 @@
         <!-- 月を選ぶ（前の月は見るだけ。直せるのは今の月だけ） -->
         <select id="hist-month" onchange="onHistMonth()" aria-label="見る月" hidden></select>
         <div class="hist-sum" id="hist-sum"></div>
-        <div id="expense-list"><div class="empty-msg">読み込み中...</div></div>
+        <div id="expense-list"><div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div><div class="sg-skel card"></div></div></div>
       </div>
 
       <div class="card" id="att-card">
@@ -497,7 +497,7 @@
     document.getElementById('main-app').style.display = 'block';
     document.getElementById('hdr-name').textContent = currentStaff;
     document.getElementById('who-initial').textContent = String(currentStaff || '?').charAt(0);
-    document.getElementById('hdr-month').textContent = '読み込み中...';
+    document.getElementById('hdr-month').innerHTML = '<span class="sg-skel word" aria-label="読み込み中"></span>';
 
     callApi('getSheetInfo', { staffName: currentStaff })
       .then(function(info) {
@@ -644,7 +644,7 @@
         took();
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
-        alert('解析エラー: ' + err.message);
+        alert('読み取れませんでした。' + err.message);
       });
   }
 
@@ -796,7 +796,7 @@
   // 前の月：経費履歴から読むだけ（直したり消したりはしない）
   function loadArchived() {
     var listEl = document.getElementById('expense-list');
-    listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    listEl.innerHTML = '<div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div><div class="sg-skel card"></div></div>';
     callApi('getArchivedExpenses', { staffName: currentStaff, yearMonth: histYm })
       .then(function(expenses) {
         historyItems = [];
@@ -823,7 +823,7 @@
     if (histYm) { loadArchived(); return; }
     document.getElementById('hist-sum').innerHTML = '';
     var listEl = document.getElementById('expense-list');
-    listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    listEl.innerHTML = '<div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div><div class="sg-skel card"></div></div>';
     callApi('getExpenses', { staffName: currentStaff })
       .then(function(expenses) {
         historyItems = expenses || [];
@@ -852,7 +852,8 @@
         document.getElementById('hdr-total').textContent = '¥' + total.toLocaleString();
       })
       .catch(function(err) {
-        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + esc(err.message) + '<br><button class="btn-submit-all" style="margin-top:10px;max-width:200px;" onclick="loadHistory()">再試行</button></div>';
+        listEl.innerHTML = GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む');
+        listEl.querySelector('[data-sg-retry]').onclick = function () { loadHistory(); };
       });
   }
 
@@ -885,7 +886,7 @@
       })
       .then(function() { loadHistory(); })
       .catch(function(err) {
-        alert('削除エラー: ' + err.message);
+        alert('削除できませんでした。' + err.message);
         loadHistory();
       });
   }
@@ -993,7 +994,7 @@
     var dateEl = document.getElementById('att-date');
     if (!dateEl.value) dateEl.value = ymd(new Date());
     var box = document.getElementById('att-list');
-    box.innerHTML = '<div class="empty-msg" style="padding:12px 0">読み込み中...</div>';
+    box.innerHTML = '<div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div></div>';
     callApi('listAttachments', { staffName: currentStaff, ym: readOnly ? ymKey(histYm) : '' })
       .then(function(list) {
         if (seq !== attSeq) return;
@@ -1065,7 +1066,7 @@
     btn.disabled = true;
     callApi('deleteAttachment', { staffName: currentStaff, id: id })
       .then(function() { setAttMsg(''); loadAttachments(); })
-      .catch(function(err) { alert('削除エラー: ' + err.message); btn.disabled = false; });
+      .catch(function(err) { alert('削除できませんでした。' + err.message); btn.disabled = false; });
   }
 
   function exportPdf() {
