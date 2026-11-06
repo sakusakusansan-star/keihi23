@@ -63,6 +63,16 @@
       color: var(--sg-mute); cursor: pointer;
     }
     .item-chip.selected { border-color: var(--sg-primary); background: var(--sg-blue-tint); color: var(--sg-ink); }
+    /* 商流（どの取引先の仕事の経費か）。シフト表の取引先と同じ名前 */
+    .flow-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .flow-chip { padding: 10px 14px; border-radius: 999px; border: 2px solid var(--sg-hair); background: var(--sg-sunk);
+      font-size: 14px; font-weight: bold; color: var(--sg-mute); cursor: pointer; }
+    .flow-chip.selected { border-color: var(--sg-primary); background: var(--sg-primary); color: var(--sg-on-primary); }   /* 項目の選択と同じ見た目 */
+    .flow-hint { font-size: 12px; color: var(--sg-mute); margin-top: 6px; }
+    .exp-flow { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 800;
+      background: var(--sg-sunk); color: var(--sg-ink2); }
+    .exp-flow.unset { background: var(--sg-amber-tint); color: var(--sg-amber); }
+    .exp-flow-sel { margin-top: 6px; font-size: 13px; padding: 6px 8px; border-radius: 8px; max-width: 100%; }
 
     .upload-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .upload-btn {
@@ -303,6 +313,12 @@
           </div>
 
           <div class="gap">
+            <label>商流（どの取引先の仕事の分か）</label>
+            <div class="flow-chips" id="flow-chips"></div>
+            <div class="flow-hint">会社全体の経費（パソコンなど）は「なし」</div>
+          </div>
+
+          <div class="gap">
             <label>日付</label>
             <input type="date" id="m-date">
           </div>
@@ -391,6 +407,30 @@
   var STAFF_KEY = 'expenseStaffName';
   var currentStaff = null;
   var selectedItem = null;
+
+  // ── 商流（シフト表の取引先と同じ）。最後に選んだものを次の初期値にする ──
+  var FLOWS = ['南国殖産', 'ハイコム', 'サンコミ', 'ダル', 'NOON', '九情', 'なし'];
+  var FLOW_KEY = 'siegKeihiFlow';
+  function lastFlow() { try { var v = localStorage.getItem(FLOW_KEY) || ''; return FLOWS.indexOf(v) >= 0 ? v : ''; } catch (e) { return ''; } }
+  function rememberFlow(v) { try { if (v) localStorage.setItem(FLOW_KEY, v); } catch (e) {} }
+  function flowLabel(v) { return v === 'なし' ? 'なし（会社の経費など）' : v; }
+  function flowOptions(cur, placeholder) {
+    return '<option value="">' + (placeholder || '商流を選ぶ') + '</option>' + FLOWS.map(function (v) {
+      return '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + flowLabel(v) + '</option>';
+    }).join('');
+  }
+  function flowTag(v) { return '<span class="exp-flow' + (v ? '' : ' unset') + '">' + esc(v ? (v === 'なし' ? '商流なし' : v) : '商流 未選択') + '</span>'; }
+  var selectedFlow = lastFlow();
+  function paintFlowChips() {
+    var box = document.getElementById('flow-chips');
+    if (!box) return;
+    box.innerHTML = FLOWS.map(function (v) {
+      return '<button type="button" class="flow-chip' + (v === selectedFlow ? ' selected' : '') + '" data-flow="' + v + '" aria-pressed="' + (v === selectedFlow) + '">' + esc(v) + '</button>';
+    }).join('');
+    box.querySelectorAll('.flow-chip').forEach(function (b) {
+      b.onclick = function () { selectedFlow = b.getAttribute('data-flow'); paintFlowChips(); };
+    });
+  }
   var historyItems = [];   // 履歴タブに出している経費（削除のときに中身を照合する）
 
   // 何度やり直しても結果が変わらない操作（読み込み）だけ自動で再試行する。
@@ -493,6 +533,7 @@
   }
 
   function startApp() {
+    paintFlowChips();
     document.getElementById('staff-select-screen').classList.add('hidden');
     document.getElementById('main-app').style.display = 'block';
     document.getElementById('hdr-name').textContent = currentStaff;
@@ -670,6 +711,8 @@
       html += '<input type="number" id="ri-amount-'+idx+'" value="'+(item.amount||'')+'"></div>';
       html += '<div class="result-field"><label>内容（手入力）</label>';
       html += '<input type="text" id="ri-desc-'+idx+'" value="" placeholder="内容を入力してください"></div>';
+      html += '<div class="result-field full"><label>商流</label>';
+      html += '<select id="ri-flow-'+idx+'">' + flowOptions(lastFlow()) + '</select></div>';
       html += '</div></div>';
     });
     document.getElementById('results-list').innerHTML = html;
@@ -702,12 +745,18 @@
       var date   = document.getElementById('ri-date-'+idx).value;
       var amount = parseInt(document.getElementById('ri-amount-'+idx).value) || 0;
       var desc   = document.getElementById('ri-desc-'+idx).value;
+      var flow   = document.getElementById('ri-flow-'+idx).value;
       if (!item || !date || !amount) {
         resultEl.className = 'error-msg';
         resultEl.textContent = '⚠️ 領収書'+(idx+1)+'の項目・日付・金額を入力してください';
         return;
       }
-      toSend.push({ item: item, date: date, amount: amount, description: desc });
+      if (!flow) {
+        resultEl.className = 'error-msg';
+        resultEl.textContent = '⚠️ 領収書'+(idx+1)+'の商流を選んでください（会社の経費なら「なし」）';
+        return;
+      }
+      toSend.push({ item: item, date: date, amount: amount, description: desc, flow: flow });
     }
 
     if (toSend.length === 0) {
@@ -722,6 +771,7 @@
 
     callApi('saveExpenses', { staffName: currentStaff, dataList: toSend, requestId: GasClient.newId() })
       .then(function(res) {
+        rememberFlow(toSend[toSend.length - 1].flow);
         resultEl.className = 'success';
         resultEl.textContent = '✅ ' + res.saved + '件を登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
         document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
@@ -741,11 +791,17 @@
       item: selectedItem,
       date: document.getElementById('m-date').value,
       amount: parseInt(document.getElementById('m-amount').value) || 0,
-      description: document.getElementById('m-desc').value
+      description: document.getElementById('m-desc').value,
+      flow: selectedFlow
     }];
     if (!data[0].item || !data[0].date || !data[0].amount) {
       resultEl.className = 'error-msg';
       resultEl.textContent = '⚠️ 項目・日付・金額は必須です';
+      return;
+    }
+    if (!data[0].flow) {
+      resultEl.className = 'error-msg';
+      resultEl.textContent = '⚠️ 商流を選んでください（会社の経費なら「なし」）';
       return;
     }
     resultEl.className = '';
@@ -756,6 +812,7 @@
         resultEl.className = 'success';
         resultEl.textContent = '✅ 登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
         document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
+        rememberFlow(data[0].flow);   // 商流は次も同じことが多いので、選んだまま残す
         document.getElementById('m-date').value = '';
         document.getElementById('m-amount').value = '';
         document.getElementById('m-desc').value = '';
@@ -793,7 +850,25 @@
     loadHistory(true);
   }
 
-  // 前の月：経費履歴から読むだけ（直したり消したりはしない）
+  // 前の月の1件の商流を選ぶ（経費履歴に書く。中身は変えない）
+  var archivedItems = [];
+  function setArchivedFlow(i, sel) {
+    var e = archivedItems[i];
+    if (!e) return;
+    var flow = sel.value, before = e.flow || '';
+    sel.disabled = true;
+    callApi('setArchivedFlow', { staffName: currentStaff, yearMonth: histYm, no: e.no, flow: flow,
+      expect: { item: e.item, date: e.date, amount: e.amount, description: e.description } })
+      .then(function() {
+        e.flow = flow;
+        var tag = sel.parentNode.querySelector('.exp-flow');
+        if (tag) tag.outerHTML = flowTag(flow);
+      })
+      .catch(function(err) { sel.value = before; alert('商流を保存できませんでした。' + err.message); })
+      .then(function() { sel.disabled = false; });
+  }
+
+  // 前の月：経費履歴から読むだけ（直したり消したりはしない。商流だけは選べる）
   function loadArchived() {
     var listEl = document.getElementById('expense-list');
     listEl.innerHTML = '<div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div><div class="sg-skel card"></div></div>';
@@ -801,16 +876,20 @@
       .then(function(expenses) {
         historyItems = [];
         var total = 0, html = '';
-        (expenses || []).forEach(function(e) {
+        archivedItems = expenses || [];
+        archivedItems.forEach(function(e, i) {
           total += Number(e.amount) || 0;
           html += '<div class="expense-item ' + esc(e.item || 'その他') + '">';
-          html += '<div><div class="exp-tag">' + esc(e.item || '—') + '</div>';
+          html += '<div><div class="exp-tag">' + esc(e.item || '—') + flowTag(e.flow) + '</div>';
           html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
-          html += '<div class="exp-date">' + esc(e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—') + '</div></div>';
+          html += '<div class="exp-date">' + esc(e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—') + '</div>';
+          // 前の月も、商流だけはあとから選べる（中身は直せない）
+          if (e.no) html += '<select class="exp-flow-sel" aria-label="商流" onchange="setArchivedFlow(' + i + ', this)">' + flowOptions(e.flow || '', '商流を選ぶ') + '</select>';
+          html += '</div>';
           html += '<div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div></div>';
         });
         listEl.innerHTML = html || '<div class="empty-msg">この月の経費はありません</div>';
-        document.getElementById('hist-sum').innerHTML = esc(histYm) + 'の合計 <b>¥' + total.toLocaleString() + '</b>　（前の月は見るだけです）';
+        document.getElementById('hist-sum').innerHTML = esc(histYm) + 'の合計 <b>¥' + total.toLocaleString() + '</b>　（前の月は商流だけ選べます）';
       })
       .catch(function(err) {
         listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + esc(err.message) + '</div>';
@@ -840,7 +919,7 @@
           var dateStr = e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—';
           // 内容は手入力なので、記号（< や &）が入っても崩れないようエスケープする
           html += '<div class="expense-item ' + esc(cls) + '">';
-          html += '<div><div class="exp-tag">' + esc(e.item || '—') + '</div>';
+          html += '<div><div class="exp-tag">' + esc(e.item || '—') + flowTag(e.flow) + '</div>';
           html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
           html += '<div class="exp-date">' + esc(dateStr) + '</div></div>';
           html += '<div><div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div>';
@@ -909,6 +988,7 @@
       '<div><label>日付</label><input type="date" id="ed-date" value="' + esc(ymd(e.date)) + '"></div>' +
       '<div><label>金額（円）</label><input type="number" id="ed-amount" inputmode="numeric" value="' + esc(Number(e.amount) || '') + '"></div>' +
       '<div class="full"><label>内容・摘要</label><input type="text" id="ed-desc" value="' + esc(e.description || '') + '"></div>' +
+      '<div class="full"><label>商流</label><select id="ed-flow">' + flowOptions(e.flow || '') + '</select></div>' +
       '<div class="exp-edit-msg" id="ed-msg"></div>' +
       '<div class="exp-edit-btns"><button type="button" class="exp-cancel" onclick="loadHistory(true)">やめる</button>' +
       '<button type="button" class="exp-save" id="ed-save" onclick="saveEdit(' + idx + ')">保存する</button></div></div>';
@@ -919,10 +999,12 @@
       item: document.getElementById('ed-item').value,
       date: document.getElementById('ed-date').value,
       amount: Number(document.getElementById('ed-amount').value),
-      description: document.getElementById('ed-desc').value.trim()
+      description: document.getElementById('ed-desc').value.trim(),
+      flow: document.getElementById('ed-flow').value
     };
     var msg = document.getElementById('ed-msg');
     if (!data.date || !(data.amount > 0)) { msg.textContent = '日付と金額を入れてください'; return; }
+    if (!data.flow) { msg.textContent = '商流を選んでください（会社の経費なら「なし」）'; return; }
     var btn = document.getElementById('ed-save');
     btn.disabled = true; btn.textContent = '保存中…';
     // 削除と同じく、直す直前に最新の一覧を取り直して同じ経費の行を使う
