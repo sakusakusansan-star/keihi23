@@ -174,6 +174,22 @@
       font-size: 15px; font-weight: bold; cursor: pointer;
     }
     .btn-pdf:active { opacity: 0.88; }
+    /* 領収書・請求書の添付 */
+    .att-hint { font-size: 12.5px; color: var(--sg-mute); line-height: 1.6; margin-bottom: 12px; }
+    .att-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .att-row label { margin-top: 0; }
+    .btn-attach { width: 100%; min-height: 50px; padding: 12px; border: 1.5px dashed var(--sg-hair); border-radius: 12px; background: var(--sg-sunk);
+      color: var(--sg-ink); font-size: 14.5px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .btn-attach:disabled { opacity: .5; }
+    .att-msg { font-size: 13px; text-align: center; margin-top: 8px; line-height: 1.6; }
+    .att-msg:empty { display: none; }
+    .att-list { margin-top: 12px; }
+    .att-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--sg-hair2); font-size: 13px; }
+    .att-item:first-child { border-top: 0; }
+    .att-item .d { flex: none; color: var(--sg-mute); font-weight: bold; min-width: 3.4em; }
+    .att-item .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .att-item .n small { display: block; color: var(--sg-mute); font-size: 11px; }
+    .att-item button { flex: none; border: 0; background: none; color: var(--sg-mute); font-size: 18px; padding: 2px 8px; cursor: pointer; }
 
   
   /* ═══ 共通の見た目（sieg-theme.css）に合わせる ═══
@@ -250,6 +266,7 @@
             </button>
           </div>
           <div class="upload-sub">複数枚の領収書が写っていてもOK</div>
+          <div class="upload-sub">PDFで届いた領収書・請求書は <a href="#att-card" onclick="switchTab('history'); setTimeout(function(){ document.getElementById('att-card').scrollIntoView({ behavior: 'smooth' }); }, 300); return false;" style="color:var(--sg-blue);font-weight:bold;">「履歴」の添付</a> から保存できます</div>
           <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none" onchange="onFileSelected(this)">
           <input type="file" id="gallery-input" accept="image/*" style="display:none" onchange="onFileSelected(this)">
           <div class="preview-wrap" id="preview-wrap">
@@ -315,6 +332,21 @@
         <div class="hist-sum" id="hist-sum"></div>
         <div id="expense-list"><div class="empty-msg">読み込み中...</div></div>
       </div>
+
+      <div class="card" id="att-card">
+        <div class="card-title"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg> 領収書・請求書の添付</div>
+        <p class="att-hint" id="att-hint">PDFで届いた領収書や請求書を添付すると、経費精算のPDFと同じ月のフォルダに保存されます。写真も添付できます。</p>
+        <div id="att-form">
+          <div class="att-row">
+            <div><label for="att-date">日付</label><input type="date" id="att-date"></div>
+            <div><label for="att-memo">メモ（なくてもよい）</label><input type="text" id="att-memo" maxlength="30" placeholder="例：Amazon"></div>
+          </div>
+          <button type="button" class="btn-attach" id="att-btn" onclick="document.getElementById('att-input').click()"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> PDF・写真を選んで添付</button>
+          <input type="file" id="att-input" accept="application/pdf,image/*" multiple style="display:none" onchange="onAttachSelected(this)">
+        </div>
+        <div class="att-msg" id="att-msg"></div>
+        <div class="att-list" id="att-list"></div>
+      </div>
     </div>
 
     <!-- 設定 -->
@@ -363,7 +395,8 @@
 
   // 何度やり直しても結果が変わらない操作（読み込み）だけ自動で再試行する。
   // 登録・削除・月の切り替え・PDFは、2回走ると二重になるので再試行しない。
-  var RETRY_SAFE_ACTIONS = { getStaffList: true, getSheetInfo: true, getExpenses: true };
+  // addAttachment は送信ID（uploadId）で二重に保存しないので、やり直してよい
+  var RETRY_SAFE_ACTIONS = { getStaffList: true, getSheetInfo: true, getExpenses: true, listAttachments: true, addAttachment: true };
 
   function callApi(action, params, timeoutMs) {
     var body = Object.assign({ action: action }, params || {});
@@ -786,6 +819,7 @@
 
   function loadHistory(keepMonths) {
     if (!keepMonths) loadMonths();
+    loadAttachments();
     if (histYm) { loadArchived(); return; }
     document.getElementById('hist-sum').innerHTML = '';
     var listEl = document.getElementById('expense-list');
@@ -937,6 +971,101 @@
         document.getElementById('reset-result').style.color = 'var(--sg-red)';
         document.getElementById('reset-result').textContent = '❌ ' + err.message;
       });
+  }
+
+  // ─── 領収書・請求書の添付（PDF・写真）。選んだらすぐ、その月のフォルダに保存 ───
+  // 前の月を見ているときは一覧だけ（足せるのは今の月だけ）
+  var ATT_MAX_SIDE = 2000, ATT_Q = 0.85, ATT_MAX_BYTES = 10 * 1024 * 1024, attSeq = 0, attBusy = false;
+  function ymKey(label) {
+    var m = String(label || '').match(/(\d+)年(\d+)月/);
+    return m ? m[1] + '-' + String(Number(m[2])).padStart(2, '0') : '';
+  }
+  function setAttMsg(text, color) {
+    var el = document.getElementById('att-msg');
+    el.style.color = color || 'var(--sg-mute)'; el.textContent = text || '';
+  }
+  function loadAttachments() {
+    var readOnly = !!histYm, seq = ++attSeq;
+    document.getElementById('att-form').hidden = readOnly;
+    document.getElementById('att-hint').textContent = readOnly
+      ? histYm + 'に添付したもの（前の月は見るだけです）'
+      : 'PDFで届いた領収書や請求書を添付すると、経費精算のPDFと同じ月のフォルダに保存されます。写真も添付できます。';
+    var dateEl = document.getElementById('att-date');
+    if (!dateEl.value) dateEl.value = ymd(new Date());
+    var box = document.getElementById('att-list');
+    box.innerHTML = '<div class="empty-msg" style="padding:12px 0">読み込み中...</div>';
+    callApi('listAttachments', { staffName: currentStaff, ym: readOnly ? ymKey(histYm) : '' })
+      .then(function(list) {
+        if (seq !== attSeq) return;
+        list = list || [];
+        box.innerHTML = list.length ? list.map(function(a) {
+          var d = a.date ? Number(a.date.slice(5, 7)) + '/' + Number(a.date.slice(8)) : '—';
+          return '<div class="att-item"><span class="d">' + esc(d) + '</span><span class="n">' + esc(a.memo || '領収書')
+            + '<small>' + esc(a.file) + '</small></span>'
+            + (readOnly ? '' : '<button type="button" aria-label="' + esc(a.file) + 'を消す" onclick="deleteAttachment(\'' + esc(a.id) + '\', this)">×</button>') + '</div>';
+        }).join('') : '<div class="empty-msg" style="padding:12px 0">まだ添付はありません</div>';
+      })
+      .catch(function(err) {
+        if (seq === attSeq) box.innerHTML = '<div class="empty-msg" style="padding:12px 0">添付を読み込めませんでした: ' + esc(err.message) + '</div>';
+      });
+  }
+  function readAttachFile(file) {
+    return new Promise(function(resolve, reject) {
+      var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+      if (!isPdf && !/^image\//.test(file.type)) { reject(new Error('PDFか写真を選んでください。')); return; }
+      if (isPdf && file.size > ATT_MAX_BYTES) { reject(new Error('10MBより大きいPDFは添付できません。')); return; }
+      function done(type, url) {
+        var data = url.split(',')[1] || '';
+        if (data.length * 3 / 4 > ATT_MAX_BYTES) reject(new Error('10MBより大きいので添付できません。'));
+        else resolve({ name: file.name, mimeType: type, data: data });
+      }
+      var r = new FileReader();
+      r.onerror = function() { reject(new Error('ファイルを読み込めませんでした。')); };
+      r.onload = function() {
+        if (isPdf) { done('application/pdf', r.result); return; }
+        var img = new Image();
+        img.onload = function() {
+          var sc = Math.min(1, ATT_MAX_SIDE / Math.max(img.width, img.height)), c = document.createElement('canvas');
+          c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          done('image/jpeg', c.toDataURL('image/jpeg', ATT_Q));
+        };
+        img.onerror = function() { reject(new Error('この写真の形式は読み込めませんでした。スクリーンショットかPDFでお試しください。')); };
+        img.src = r.result;
+      };
+      r.readAsDataURL(file);
+    });
+  }
+  function onAttachSelected(input) {
+    var files = Array.prototype.slice.call(input.files || []); input.value = '';
+    if (!files.length || attBusy) return;
+    var date = document.getElementById('att-date').value, memo = document.getElementById('att-memo').value.trim();
+    var btn = document.getElementById('att-btn'), saved = 0;
+    attBusy = true; btn.disabled = true;
+    files.reduce(function(p, file, i) {
+      return p.then(function() {
+        setAttMsg('保存中…（' + (i + 1) + '/' + files.length + '）');
+        return readAttachFile(file).then(function(f) {
+          return callApi('addAttachment', { staffName: currentStaff, uploadId: GasClient.newId(), mimeType: f.mimeType, data: f.data, date: date, memo: memo }, 90000);
+        }).then(function() { saved++; })
+          .catch(function(e) { throw new Error(file.name + '：' + e.message); });
+      });
+    }, Promise.resolve()).then(function() {
+      setAttMsg('✅ ' + saved + '件添付しました', 'var(--sg-green)');
+      document.getElementById('att-memo').value = '';
+    }).catch(function(e) {
+      setAttMsg('❌ ' + (saved ? saved + '件は添付しました。' : '') + e.message, 'var(--sg-red)');
+    }).then(function() {
+      attBusy = false; btn.disabled = false;
+      loadAttachments();
+    });
+  }
+  function deleteAttachment(id, btn) {
+    if (!confirm('この添付を消しますか？（Googleドライブからもゴミ箱へ移します）')) return;
+    btn.disabled = true;
+    callApi('deleteAttachment', { staffName: currentStaff, id: id })
+      .then(function() { setAttMsg(''); loadAttachments(); })
+      .catch(function(err) { alert('削除エラー: ' + err.message); btn.disabled = false; });
   }
 
   function exportPdf() {
