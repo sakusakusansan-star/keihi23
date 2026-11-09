@@ -28,6 +28,9 @@
        err.maybeDone  … スクリプト本体は動いた（＝登録は済んでいる）かもしれない
    ・読み込みに失敗した箇所の案内は GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む')
      （sieg-theme.css の .sg-err。ボタンは data-sg-retry が付くので、呼び出し側でクリックを拾う）
+   ・最後まで失敗したとき（と、画面のプログラムが止まったとき）は、日報の GAS の「エラー記録」シートに知らせる
+     （GasClient.report。電波が無いときは送らない。同じ不具合は10分に1回、1台から10分に5件まで。
+       localStorage の siegNoReport が '1' なら送らない＝テスト用）
    ═══════════════════════════════════════════════════════════════ */
 (function (global) {
   'use strict';
@@ -148,6 +151,47 @@
     });
   }
 
+  // ═══ 不具合の記録 ═══
+  var REPORT_URL = 'https://script.google.com/macros/s/AKfycbwEclDIdJiNgdXOmveRvT-BJOVWc6FwyrpxWNrqHs1DB9xgx9Ijuix0qqQ5KyG-XlkF7w/exec';   // 日報の GAS
+  var REPORT_KEY = 'siegErrSent';
+  function lsGet(k) { try { return global.localStorage ? global.localStorage.getItem(k) : null; } catch (e) { return null; } }
+  function report(err, info) {
+    try {
+      info = info || {};
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;   // 電波が無いだけ
+      if (!global.fetch || lsGet('siegNoReport') === '1') return false;
+      var kind = String((err && err.kind) || info.kind || 'error');
+      var page = (global.location && global.location.pathname) || '';
+      var sig = page + '|' + (info.what || '') + '|' + kind, now = Date.now(), list = [];
+      try { list = JSON.parse(lsGet(REPORT_KEY) || '[]').filter(function (x) { return now - x.t < 600000; }); } catch (e) { list = []; }
+      if (list.length >= 5 || list.some(function (x) { return x.s === sig; })) return false;
+      list.push({ t: now, s: sig });
+      try { global.localStorage.setItem(REPORT_KEY, JSON.stringify(list)); } catch (e) {}
+      var body = {
+        // 名前は who で送る（name だと、更新前の日報 GAS が日報として記録してしまうため）
+        action: 'logError', who: lsGet('siegStaff') || '', page: page, what: String(info.what || ''), kind: kind,
+        msg: String((err && err.message) || err || '').slice(0, 200),
+        detail: String((err && err.detail) || info.detail || '').slice(0, 400),
+        ua: (typeof navigator !== 'undefined' ? navigator.userAgent : '').slice(0, 120)
+      };
+      fetch(REPORT_URL, { method: 'POST', body: JSON.stringify(body), keepalive: true, redirect: 'follow' }).catch(function () {});
+      return true;
+    } catch (e) { return false; }
+  }
+  // どの読み書きをしていたか（POST は本文の action、GET は ?action=）
+  function actionOf(url, init) {
+    try { if (init && init.body) { var a = JSON.parse(init.body).action; if (a) return String(a); } } catch (e) {}
+    var m = String(url || '').match(/[?&]action=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : (init && init.method === 'POST' ? '(送信)' : '(読み込み)');
+  }
+  // 画面のプログラムが止まったとき（このサイトのファイルで起きたものだけ）
+  if (global.addEventListener && global.location) {
+    global.addEventListener('error', function (e) {
+      if (!e || !e.filename || e.filename.indexOf(global.location.origin) !== 0) return;
+      report({ kind: 'js', message: e.message, detail: e.filename.replace(global.location.origin, '') + ':' + e.lineno + ':' + e.colno }, { what: '画面のプログラム' });
+    });
+  }
+
   function request(url, init, opts) {
     opts = opts || {};
     var timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
@@ -170,6 +214,7 @@
           // 電波はあるのに何度もつながらない＝デプロイ設定のことが多い
           err.detail = (err.detail || '') + '電波が良いのに続く場合は、GASの「アクセスできるユーザー」が【全員】になっているか、URLが最新か確認してください。';
         }
+        report(err, { what: actionOf(url, init) });   // 管理する人が気づけるように
         throw err;
       });
     }
@@ -219,5 +264,5 @@
       + (retryLabel ? '<button type="button" data-sg-retry>' + esc(retryLabel) + '</button>' : '') + '</div>';
   }
 
-  global.GasClient = { post: post, get: get, newId: newId, errorHtml: errorHtml, MSG: MSG };
+  global.GasClient = { post: post, get: get, newId: newId, errorHtml: errorHtml, report: report, MSG: MSG };
 })(this);
