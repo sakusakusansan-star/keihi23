@@ -168,7 +168,8 @@
       list.push({ t: now, s: sig });
       try { global.localStorage.setItem(REPORT_KEY, JSON.stringify(list)); } catch (e) {}
       var body = {
-        action: 'logError', name: lsGet('siegStaff') || '', page: page, what: String(info.what || ''), kind: kind,
+        // 名前は who で送る（name だと、更新前の日報 GAS が日報として記録してしまうため）
+        action: 'logError', who: lsGet('siegStaff') || '', page: page, what: String(info.what || ''), kind: kind,
         msg: String((err && err.message) || err || '').slice(0, 200),
         detail: String((err && err.detail) || info.detail || '').slice(0, 400),
         ua: (typeof navigator !== 'undefined' ? navigator.userAgent : '').slice(0, 120)
