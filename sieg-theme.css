@@ -182,3 +182,44 @@ body.has-actionbar.has-tabbar { padding-bottom: calc(24px + var(--sg-actionbar-h
 .sg-skel-wrap { padding: 4px 0; }
 @keyframes sg-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .sg-skel { animation: none; } }
+
+/* ═══ 下の送信バー：送れるものが無いあいだ（sieg-nav.js が .is-idle を付ける）═══
+   大きいボタンは出さず、案内の1行だけにする。選ぶとボタンが出る */
+.sg-idleline { display: none !important; }
+.sg-actionbar.is-idle, [data-sg-actionbar].is-idle { padding-top: 9px; padding-bottom: calc(9px + env(safe-area-inset-bottom)); }
+.has-tabbar .sg-actionbar.is-idle { padding-bottom: 9px; }
+.is-idle > :not(.sg-idleline) { display: none !important; }
+.is-idle > .sg-idleline { display: block !important; text-align: center; font-size: 12.5px; font-weight: 700; color: var(--sg-mute); line-height: 1.5; }
+
+/* ═══ 空のとき ═══
+   SiegNav.empty('まだ入力がありません', '上のカレンダーで日にちを選ぶと入力できます') が作る。
+   「何もない」だけで終わらせず、次に何をすればいいかを1行そえる */
+.sg-empty { text-align: center; padding: 22px 12px; color: var(--sg-mute); font-size: 13px; line-height: 1.65; }
+.sg-empty > b { display: block; color: var(--sg-ink2); font-size: 14px; font-weight: 800; }
+.sg-empty > span { display: block; margin-top: 2px; }
+
+/* ═══ 画面の上：ツール名の下の説明は、右上の名前にぶつけない ═══
+   長い説明・状態は <p class="sg-lead"> にして .sg-head の下に置く（.sg-sub は「2026年11月」のような短いものだけ） */
+.sg-head { align-items: flex-start; }
+.sg-head > .sg-who, .sg-head > .sg-datepill { margin-top: 14px; }
+.sg-sub { overflow-wrap: anywhere; }
+.sg-lead { margin: -6px 0 12px; font-size: 13px; line-height: 1.65; color: var(--sg-mute); font-weight: 600; }
+.sg-who > span.unset { color: var(--sg-mute); }
+/* 日付など、ツール名の下に置く押せる1行 */
+.sg-subbtn { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; padding: 5px 10px 5px 8px; border: 1px solid var(--sg-hair); border-radius: 999px;
+  background: var(--sg-surface); color: var(--sg-ink2); font: 800 13px/1.2 var(--sg-font); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.sg-subbtn .sg-ic { color: var(--sg-mute); }
+
+/* ═══ パソコン：入力の右に一覧を並べる ═══
+   幅が 1000px 以上で、body に .sg-two が付いているあいだだけ2列にする（スマホは下のタブで切り替えるまま）。
+     <div class="sg-page" data-sg-two> … <div data-sg-pair="main">入力</div><div data-sg-pair="side">一覧</div> … </div>
+   「一覧」のタブは data-sg-pairtab を付けておくと、2列のときは出さない。
+   ページ側は、入力の画面を出しているあいだ body に .sg-two を付ける（SiegNav.wide() が幅の判定） */
+@media (min-width: 1000px) {
+  body.sg-two .sg-page { max-width: 1080px; }
+  body.sg-two [data-sg-two]:not([hidden]) { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; align-items: start; }
+  body.sg-two [data-sg-two] > * { grid-column: 1 / -1; min-width: 0; }
+  body.sg-two [data-sg-two] > [data-sg-pair="main"] { grid-column: 1; display: block !important; }
+  body.sg-two [data-sg-two] > [data-sg-pair="side"] { grid-column: 2; display: block !important; }
+  [data-sg-pairtab] { display: none !important; }
+}

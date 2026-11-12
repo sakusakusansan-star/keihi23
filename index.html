@@ -240,8 +240,8 @@
   </header>
 
   <nav class="tabs sg-tabbar" aria-label="画面の切り替え">
-    <button type="button" class="tab sg-tab active" onclick="switchTab('input')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>新規入力</button>
-    <button type="button" class="tab sg-tab" onclick="switchTab('history')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>履歴</button>
+    <button type="button" class="tab sg-tab active" onclick="switchTab('input')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>入力</button>
+    <button type="button" class="tab sg-tab" data-sg-pairtab onclick="switchTab('history')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>一覧</button>
     <button type="button" class="tab sg-tab" onclick="switchTab('settings')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>設定</button>
   </nav>
 
@@ -251,10 +251,11 @@
     <button class="sg-primary" id="btn-submit-manual" onclick="submitManual()" hidden>送信する</button>
   </div>
 
-  <div class="content">
+  <div class="content" data-sg-two>
+    <div id="load-error"></div>
 
     <!-- 新規入力 -->
-    <div id="page-input" class="page active">
+    <div id="page-input" class="page active" data-sg-pair="main">
 
       <div class="method-tabs">
         <div class="method-tab active" id="method-photo" onclick="switchMethod('photo')"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> 写真でAI読取</div>
@@ -276,7 +277,7 @@
             </button>
           </div>
           <div class="upload-sub">複数枚の領収書が写っていてもOK</div>
-          <div class="upload-sub">PDFで届いた領収書・請求書は <a href="#att-card" onclick="switchTab('history'); setTimeout(function(){ document.getElementById('att-card').scrollIntoView({ behavior: 'smooth' }); }, 300); return false;" style="color:var(--sg-blue);font-weight:bold;">「履歴」の添付</a> から保存できます</div>
+          <div class="upload-sub">PDFで届いた領収書・請求書は <a href="#att-card" onclick="switchTab('history'); setTimeout(function(){ document.getElementById('att-card').scrollIntoView({ behavior: 'smooth' }); }, 300); return false;" style="color:var(--sg-blue);font-weight:bold;">「一覧」の添付</a> から保存できます</div>
           <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none" onchange="onFileSelected(this)">
           <input type="file" id="gallery-input" accept="image/*" style="display:none" onchange="onFileSelected(this)">
           <div class="preview-wrap" id="preview-wrap">
@@ -340,7 +341,7 @@
     </div>
 
     <!-- 履歴 -->
-    <div id="page-history" class="page">
+    <div id="page-history" class="page" data-sg-pair="side">
       <div class="card">
         <div class="card-title"><svg class="sg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M2 20h20"/></svg> 経費一覧</div>
         <!-- 月を選ぶ（前の月は見るだけ。直せるのは今の月だけ） -->
@@ -438,7 +439,12 @@
   // addAttachment は送信ID（uploadId）で二重に保存しないので、やり直してよい
   var RETRY_SAFE_ACTIONS = { getStaffList: true, getSheetInfo: true, getExpenses: true, listAttachments: true, addAttachment: true };
 
+  // 「元に戻す」を待っている削除があれば、ほかの書き込みの前に先に済ませる（順番が入れ替わらないように）
   function callApi(action, params, timeoutMs) {
+    if (/^(get|analyze|list)/.test(action)) return callApiNow(action, params, timeoutMs);
+    return SiegNav.flushUndo().then(function() { return callApiNow(action, params, timeoutMs); });
+  }
+  function callApiNow(action, params, timeoutMs) {
     var body = Object.assign({ action: action }, params || {});
     return GasClient.post(GAS_URL, body, {
       timeoutMs: timeoutMs || 30000,
@@ -448,7 +454,7 @@
       return json.data;
     }, function(err) {
       if (err.maybeDone) {
-        err.message += '（サーバー側では処理が終わっている場合があります。もう一度送る前に「履歴」タブで確認してください）';
+        err.message += '（サーバー側では処理が終わっている場合があります。もう一度送る前に「一覧」タブで確認してください）';
       }
       throw err;
     });
@@ -525,11 +531,23 @@
     startApp();
   }
 
+  // 右上の名前を押すと、名前を選ぶシートが出る（どのツールも同じ）。一覧が読めなければ、前と同じ名前選びの画面へ
   function switchStaff() {
-    localStorage.removeItem(STAFF_KEY);
-    var url = new URL(window.location.href);
-    url.searchParams.delete('staff');
-    window.location.href = url.toString();
+    callApi('getStaffList').then(function(list) {
+      return SiegNav.pickName(list, currentStaff).then(function(n) {
+        if (!n || n === currentStaff) return;
+        localStorage.setItem(STAFF_KEY, n);
+        SiegNav.setStaff(n);
+        var url = new URL(window.location.href);
+        url.searchParams.set('staff', n);
+        window.location.href = url.toString();
+      });
+    }).catch(function() {
+      localStorage.removeItem(STAFF_KEY);
+      var url = new URL(window.location.href);
+      url.searchParams.delete('staff');
+      window.location.href = url.toString();
+    });
   }
 
   function startApp() {
@@ -539,6 +557,8 @@
     document.getElementById('hdr-name').textContent = currentStaff;
     document.getElementById('who-initial').textContent = String(currentStaff || '?').charAt(0);
     document.getElementById('hdr-month').innerHTML = '<span class="sg-skel word" aria-label="読み込み中"></span>';
+    document.getElementById('load-error').innerHTML = '';
+    document.body.classList.toggle('sg-two', document.getElementById('page-input').classList.contains('active'));
 
     callApi('getSheetInfo', { staffName: currentStaff })
       .then(function(info) {
@@ -551,23 +571,25 @@
         loadHistory();
       })
       .catch(function(err) {
-        document.getElementById('hdr-month').textContent = '読み込みエラー（タップで再試行）';
-        document.getElementById('hdr-month').style.cursor = 'pointer';
-        document.getElementById('hdr-month').onclick = function() {
-          document.getElementById('hdr-month').onclick = null;
-          startApp();
-        };
+        // ほかのツールと同じ形（赤いカード＋「もう一度読み込む」）で知らせる
+        document.getElementById('hdr-month').textContent = '—';
+        var box = document.getElementById('load-error');
+        box.innerHTML = GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む');
+        box.querySelector('[data-sg-retry]').onclick = function() { startApp(); };
       });
   }
 
   function switchTab(tab) {
+    // パソコンの幅では、入力の右に一覧を並べる（「一覧」タブは出さない）
+    if (SiegNav.wide() && tab === 'history') tab = 'input';
+    document.body.classList.toggle('sg-two', tab === 'input');
     document.querySelectorAll('.tab').forEach(function(t, i) {
       t.classList.toggle('active', ['input','history','settings'][i] === tab);
     });
     ['input','history','settings'].forEach(function(p) {
       document.getElementById('page-'+p).classList.toggle('active', p===tab);
     });
-    if (tab === 'history') loadHistory();
+    if (tab === 'history' || (tab === 'input' && SiegNav.wide())) loadHistory();
   }
 
   // 下の送信ボタン：新規入力のときだけ。写真は読み取り結果が出てから、手動はいつも
@@ -685,7 +707,7 @@
         took();
         document.getElementById('analyzing-wrap').style.display = 'none';
         document.getElementById('analyze-btn').style.display = 'block';
-        alert('読み取れませんでした。' + err.message);
+        SiegNav.alert(err.message, { title: '読み取れませんでした' });
       });
   }
 
@@ -772,16 +794,24 @@
     callApi('saveExpenses', { staffName: currentStaff, dataList: toSend, requestId: GasClient.newId() })
       .then(function(res) {
         rememberFlow(toSend[toSend.length - 1].flow);
-        resultEl.className = 'success';
-        resultEl.textContent = '✅ ' + res.saved + '件を登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
+        resultEl.className = ''; resultEl.textContent = '';
         document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
         clearImage();
+        sentSheet(res.saved + '件を登録しました（今月の合計 ¥' + Number(res.total).toLocaleString() + '）');
       })
       .catch(function(err) {
         resultEl.className = 'error-msg';
         resultEl.textContent = '❌ ' + err.message;
       })
       .then(function() { lockButton('btn-submit-all', false); });
+  }
+
+  // 送ったあと：どのツールも同じ形で知らせる（次にやることを並べる）
+  function sentSheet(sub) {
+    if (SiegNav.wide()) loadHistory();   // パソコンは右の一覧も新しくする
+    SiegNav.done({ title: '送信しました', sub: sub, next: [
+      { label: '続けて入力する', value: 'more' }, { label: '一覧を見る', value: 'list' }, { label: 'ポータルへ戻る', href: SiegNav.portalUrl }
+    ] }).then(function(v) { if (v === 'list') switchTab('history'); });
   }
 
   function submitManual() {
@@ -809,8 +839,8 @@
     lockButton('btn-submit-manual', true);
     callApi('saveExpenses', { staffName: currentStaff, dataList: data, requestId: GasClient.newId() })
       .then(function(res) {
-        resultEl.className = 'success';
-        resultEl.textContent = '✅ 登録しました（合計: ¥' + Number(res.total).toLocaleString() + '）';
+        resultEl.className = ''; resultEl.textContent = '';
+        sentSheet(data[0].item + '　¥' + Number(data[0].amount).toLocaleString() + '（今月の合計 ¥' + Number(res.total).toLocaleString() + '）');
         document.getElementById('hdr-total').textContent = '¥' + Number(res.total).toLocaleString();
         rememberFlow(data[0].flow);   // 商流は次も同じことが多いので、選んだまま残す
         document.getElementById('m-date').value = '';
@@ -864,7 +894,7 @@
         var tag = sel.parentNode.querySelector('.exp-flow');
         if (tag) tag.outerHTML = flowTag(flow);
       })
-      .catch(function(err) { sel.value = before; alert('商流を保存できませんでした。' + err.message); })
+      .catch(function(err) { sel.value = before; SiegNav.alert(err.message, { title: '商流を保存できませんでした' }); })
       .then(function() { sel.disabled = false; });
   }
 
@@ -888,11 +918,12 @@
           html += '</div>';
           html += '<div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div></div>';
         });
-        listEl.innerHTML = html || '<div class="empty-msg">この月の経費はありません</div>';
+        listEl.innerHTML = html || SiegNav.empty('この月の経費はありません');
         document.getElementById('hist-sum').innerHTML = esc(histYm) + 'の合計 <b>¥' + total.toLocaleString() + '</b>　（前の月は商流だけ選べます）';
       })
       .catch(function(err) {
-        listEl.innerHTML = '<div class="empty-msg">読み込みエラー: ' + esc(err.message) + '</div>';
+        listEl.innerHTML = GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む');
+        listEl.querySelector('[data-sg-retry]').onclick = function () { loadArchived(); };
       });
   }
 
@@ -907,7 +938,7 @@
       .then(function(expenses) {
         historyItems = expenses || [];
         if (!expenses || expenses.length === 0) {
-          listEl.innerHTML = '<div class="empty-msg">まだ入力がありません</div>';
+          listEl.innerHTML = SiegNav.empty('まだ入力がありません', '「入力」で領収書の写真を撮るか、手動で入れると、ここに並びます');
           document.getElementById('hdr-total').textContent = '¥0';
           return;
         }
@@ -948,26 +979,26 @@
   function deleteExpense(idx, btn) {
     var target = historyItems[idx];
     if (!target) return;
-    if (!confirm('この経費を削除しますか？\n' + (target.item || '') + '　¥' + (Number(target.amount) || 0).toLocaleString())) return;
-    if (btn) { btn.disabled = true; btn.textContent = '削除中…'; }
-
-    callApi('getExpenses', { staffName: currentStaff })
-      .then(function(latest) {
-        latest = latest || [];
-        var hit = latest.filter(function(e) { return e.row === target.row && sameExpense(e, target); })[0] ||
-                  latest.filter(function(e) { return sameExpense(e, target); })[0];
-        if (!hit) throw new Error('この経費は見つかりませんでした（すでに削除されたか、内容が変わっています）。一覧を読み込み直しました。');
-        // GAS側でも、この行の中身が hit と同じときだけ消す（取り直しと削除のあいだに変わった場合の備え）
-        return callApi('deleteExpense', {
-          staffName: currentStaff, row: hit.row,
-          expect: { item: hit.item, date: hit.date, amount: hit.amount, description: hit.description }
+    // 行をすぐ隠して「元に戻す」を出す。押されなければ5秒後に消す（SiegNav.undoable）
+    SiegNav.undoable({
+      text: (target.item || '経費') + '　¥' + (Number(target.amount) || 0).toLocaleString() + ' を消しました',
+      rows: btn ? btn.closest('.expense-item') : null,
+      commit: function() {
+        return callApi('getExpenses', { staffName: currentStaff }).then(function(latest) {
+          latest = latest || [];
+          var hit = latest.filter(function(e) { return e.row === target.row && sameExpense(e, target); })[0] ||
+                    latest.filter(function(e) { return sameExpense(e, target); })[0];
+          if (!hit) throw new Error('この経費は見つかりませんでした（すでに削除されたか、内容が変わっています）。一覧を読み込み直しました。');
+          // GAS側でも、この行の中身が hit と同じときだけ消す（取り直しと削除のあいだに変わった場合の備え）
+          return callApi('deleteExpense', {
+            staffName: currentStaff, row: hit.row,
+            expect: { item: hit.item, date: hit.date, amount: hit.amount, description: hit.description }
+          });
         });
-      })
-      .then(function() { loadHistory(); })
-      .catch(function(err) {
-        alert('削除できませんでした。' + err.message);
-        loadHistory();
-      });
+      },
+      onDone: function() { loadHistory(); },
+      onFail: function() { loadHistory(); }
+    });
   }
 
   // ─── 1件を直す（今の月だけ） ───
@@ -1036,11 +1067,13 @@
     var year = guessYear(month);
     document.getElementById('year-note').textContent = '対象年：' + year + '年（選んだ月から自動で決まります）';
 
-    if (!confirm(year + '年' + month + '月に切り替えます。今のデータはリセットされます。\n' +
-        '（今月分をまだPDF保存していなければ、先に「PDFをGoogle Driveへ保存」をしてください）\nよろしいですか？')) {
-      startApp();
-      return;
-    }
+    SiegNav.confirm('今のデータはリセットされます。\n今月分をまだPDF保存していなければ、先に「PDFをGoogle Driveへ保存」をしてください。',
+      { title: year + '年' + month + '月に切り替えますか？', ok: '切り替える', danger: true }).then(function(yes) {
+      if (!yes) { startApp(); return; }
+      doUpdateMonth(year, month);
+    });
+  }
+  function doUpdateMonth(year, month) {
     document.getElementById('reset-result').style.color = 'var(--sg-mute)';
     document.getElementById('reset-result').textContent = '切り替え中...';
     callApi('updateYearMonth', { staffName: currentStaff, year: year, month: month })
@@ -1086,7 +1119,7 @@
           return '<div class="att-item"><span class="d">' + esc(d) + '</span><span class="n">' + esc(a.memo || '領収書')
             + '<small>' + esc(a.file) + '</small></span>'
             + (readOnly ? '' : '<button type="button" aria-label="' + esc(a.file) + 'を消す" onclick="deleteAttachment(\'' + esc(a.id) + '\', this)">×</button>') + '</div>';
-        }).join('') : '<div class="empty-msg" style="padding:12px 0">まだ添付はありません</div>';
+        }).join('') : SiegNav.empty('まだ添付はありません', 'PDFで届いた領収書・請求書は、下のボタンから足せます');
       })
       .catch(function(err) {
         if (seq === attSeq) box.innerHTML = '<div class="empty-msg" style="padding:12px 0">添付を読み込めませんでした: ' + esc(err.message) + '</div>';
@@ -1144,11 +1177,13 @@
     });
   }
   function deleteAttachment(id, btn) {
-    if (!confirm('この添付を消しますか？（Googleドライブからもゴミ箱へ移します）')) return;
-    btn.disabled = true;
-    callApi('deleteAttachment', { staffName: currentStaff, id: id })
-      .then(function() { setAttMsg(''); loadAttachments(); })
-      .catch(function(err) { alert('削除できませんでした。' + err.message); btn.disabled = false; });
+    SiegNav.confirm('Googleドライブからもゴミ箱へ移します。', { title: 'この添付を消しますか？', ok: '消す', danger: true }).then(function(yes) {
+      if (!yes) return;
+      btn.disabled = true;
+      callApi('deleteAttachment', { staffName: currentStaff, id: id })
+        .then(function() { setAttMsg(''); loadAttachments(); })
+        .catch(function(err) { SiegNav.alert(err.message, { title: '削除できませんでした' }); btn.disabled = false; });
+    });
   }
 
   function exportPdf() {
