@@ -308,6 +308,20 @@
   }
   // パソコンの幅か（入力の右に一覧を並べる。sieg-theme.css の「パソコン」と同じ幅）
   function wide() { try { return !!(global.matchMedia && global.matchMedia('(min-width: 1000px)').matches); } catch (e) { return false; } }
+  /* ═══ 5. 前回の内容（開いた瞬間に出して、裏で最新にするためのしまい場所） ═══
+     SiegNav.cacheSet('commute:init:福山', data) / SiegNav.cacheGet('commute:init:福山') / SiegNav.cacheDel(…)
+     ・端末の localStorage にしまう（鍵は 'sgc:' で始まる）。古すぎるもの（既定 7日）は使わない
+     ・出すのは「見るだけ」のものに限る。送信・削除は、最新を読み終えてから受け付けること */
+  var CACHE_PREFIX = 'sgc:';
+  function cacheGet(key, maxAgeMs) {
+    try {
+      var o = JSON.parse(localStorage.getItem(CACHE_PREFIX + key) || 'null');
+      if (!o || typeof o.t !== 'number' || Date.now() - o.t > (maxAgeMs || 7 * 86400000)) return null;
+      return o.v === undefined ? null : o.v;
+    } catch (e) { return null; }
+  }
+  function cacheSet(key, value) { try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), v: value })); } catch (e) {} }
+  function cacheDel(key) { try { localStorage.removeItem(CACHE_PREFIX + key); } catch (e) {} }
   function setStaff(name) { try { localStorage.setItem(STAFF_KEY, name); } catch (e) {} }
 
   /* ═══ 4. 下の送信バー：送れるものが無いあいだは、大きいボタンを出さず案内1行だけにする ═══
@@ -340,6 +354,7 @@
   global.SiegNav = {
     staff: staff, setStaff: setStaff, portalUrl: PORTAL_URL,
     confirm: confirmSheet, alert: alertSheet, toast: toast, undoable: undoable, flushUndo: flushUndo,
-    pickName: pickName, done: done, empty: empty, watchActionbars: watchActionbars, wide: wide
+    pickName: pickName, done: done, empty: empty, watchActionbars: watchActionbars, wide: wide,
+    cacheGet: cacheGet, cacheSet: cacheSet, cacheDel: cacheDel
   };
 })(this);

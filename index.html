@@ -9,6 +9,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
+  <!-- Google（GAS）への接続を先に始めておく（最初の読み込みが少し早くなる） -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="stylesheet" href="sieg-theme.css">
 <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -440,10 +443,15 @@
   var RETRY_SAFE_ACTIONS = { getStaffList: true, getSheetInfo: true, getExpenses: true, listAttachments: true, addAttachment: true };
 
   // 「元に戻す」を待っている削除があれば、ほかの書き込みの前に先に済ませる（順番が入れ替わらないように）
+  // 前回の内容を先に出しているあいだ（infoFresh が false）は、書き込みを受け付けない
+  // （別の端末で月が替わっていると、見えている月と違う月に書いてしまうため）
+  var infoFresh = false;
   function callApi(action, params, timeoutMs) {
     if (/^(get|analyze|list)/.test(action)) return callApiNow(action, params, timeoutMs);
+    if (!infoFresh) return Promise.reject(new Error('最新の内容を確認しています。数秒待ってから、もう一度お試しください。'));
     return SiegNav.flushUndo().then(function() { return callApiNow(action, params, timeoutMs); });
   }
+  function cacheKey(kind) { return 'keihi:' + kind + ':' + currentStaff; }
   function callApiNow(action, params, timeoutMs) {
     var body = Object.assign({ action: action }, params || {});
     return GasClient.post(GAS_URL, body, {
@@ -556,19 +564,25 @@
     document.getElementById('main-app').style.display = 'block';
     document.getElementById('hdr-name').textContent = currentStaff;
     document.getElementById('who-initial').textContent = String(currentStaff || '?').charAt(0);
-    document.getElementById('hdr-month').innerHTML = '<span class="sg-skel word" aria-label="読み込み中"></span>';
     document.getElementById('load-error').innerHTML = '';
     document.body.classList.toggle('sg-two', document.getElementById('page-input').classList.contains('active'));
 
+    // 前回の内容があれば、すぐ出す（裏で最新を読んで置き換える。送信は最新を読み終えてから）
+    infoFresh = false;
+    var ci = SiegNav.cacheGet(cacheKey('info')), ce = SiegNav.cacheGet(cacheKey('exp'));
+    if (ci && ci.yearMonth) paintInfo(ci);
+    else document.getElementById('hdr-month').innerHTML = '<span class="sg-skel word" aria-label="読み込み中"></span>';
+    if (ci && ce && ce.ym === ci.yearMonth && !histYm) renderExpenses(ce.list || []);
+
+    // 月の情報と経費の一覧は同時に読む。月の選択肢と添付は、一覧を開いたとき（パソコンは最初から）
+    loadHistory(false, !SiegNav.wide(), true);
     callApi('getSheetInfo', { staffName: currentStaff })
       .then(function(info) {
-        document.getElementById('hdr-month').textContent = info.yearMonth;
-        var m = info.yearMonth.match(/(\d+)年(\d+)月/);
-        if (m) {
-          document.getElementById('sel-month').value = String(parseInt(m[2], 10));
-          document.getElementById('year-note').textContent = '対象年：' + m[1] + '年（月を変えると自動で決まります）';
-        }
-        loadHistory();
+        infoFresh = true;
+        nowYm = info.yearMonth;
+        SiegNav.cacheSet(cacheKey('info'), { yearMonth: info.yearMonth });
+        if (historyFresh) SiegNav.cacheSet(cacheKey('exp'), { ym: nowYm, list: historyItems });
+        paintInfo(info);
       })
       .catch(function(err) {
         // ほかのツールと同じ形（赤いカード＋「もう一度読み込む」）で知らせる
@@ -577,6 +591,16 @@
         box.innerHTML = GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む');
         box.querySelector('[data-sg-retry]').onclick = function() { startApp(); };
       });
+  }
+
+  var nowYm = '';   // いまのシートの月（最新を読み終えたら入る）
+  function paintInfo(info) {
+    document.getElementById('hdr-month').textContent = info.yearMonth;
+    var m = info.yearMonth.match(/(\d+)年(\d+)月/);
+    if (m) {
+      document.getElementById('sel-month').value = String(parseInt(m[2], 10));
+      document.getElementById('year-note').textContent = '対象年：' + m[1] + '年（月を変えると自動で決まります）';
+    }
   }
 
   function switchTab(tab) {
@@ -589,7 +613,7 @@
     ['input','history','settings'].forEach(function(p) {
       document.getElementById('page-'+p).classList.toggle('active', p===tab);
     });
-    if (tab === 'history' || (tab === 'input' && SiegNav.wide())) loadHistory();
+    if (tab === 'history' || (tab === 'input' && SiegNav.wide())) loadHistory(false, false, true);
   }
 
   // 下の送信ボタン：新規入力のときだけ。写真は読み取り結果が出てから、手動はいつも
@@ -808,7 +832,7 @@
 
   // 送ったあと：どのツールも同じ形で知らせる（次にやることを並べる）
   function sentSheet(sub) {
-    if (SiegNav.wide()) loadHistory();   // パソコンは右の一覧も新しくする
+    if (SiegNav.wide()) loadHistory(false, false, true);   // パソコンは右の一覧も新しくする
     SiegNav.done({ title: '送信しました', sub: sub, next: [
       { label: '続けて入力する', value: 'more' }, { label: '一覧を見る', value: 'list' }, { label: 'ポータルへ戻る', href: SiegNav.portalUrl }
     ] }).then(function(v) { if (v === 'list') switchTab('history'); });
@@ -927,39 +951,55 @@
       });
   }
 
-  function loadHistory(keepMonths) {
-    if (!keepMonths) loadMonths();
-    loadAttachments();
+  // 今の月の経費の一覧を描く（前回の内容からも、最新からも呼ぶ）
+  var historyFresh = false;
+  function renderExpenses(expenses) {
+    var listEl = document.getElementById('expense-list');
+    historyItems = expenses || [];
+    if (!historyItems.length) {
+      listEl.innerHTML = SiegNav.empty('まだ入力がありません', '「入力」で領収書の写真を撮るか、手動で入れると、ここに並びます');
+      document.getElementById('hdr-total').textContent = '¥0';
+      return;
+    }
+    var total = 0;
+    var html = '';
+    historyItems.forEach(function(e, i) {
+      total += Number(e.amount) || 0;
+      var cls = e.item || 'その他';
+      var dateStr = e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—';
+      // 内容は手入力なので、記号（< や &）が入っても崩れないようエスケープする
+      html += '<div class="expense-item ' + esc(cls) + '">';
+      html += '<div><div class="exp-tag">' + esc(e.item || '—') + flowTag(e.flow) + '</div>';
+      html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
+      html += '<div class="exp-date">' + esc(dateStr) + '</div></div>';
+      html += '<div><div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div>';
+      html += '<div class="exp-actions"><button class="btn-edit" onclick="editExpense(' + i + ')">編集</button>';
+      html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">削除</button></div></div>';
+      html += '</div>';
+    });
+    listEl.innerHTML = html;
+    document.getElementById('hdr-total').textContent = '¥' + total.toLocaleString();
+  }
+
+  // light：経費の一覧だけ読む（月の選択肢と添付は読まない。開いた直後のスマホ用）
+  // soft：直している最中の行があれば、描き直さない（裏での読み直し用。入力が消えるため）
+  function loadHistory(keepMonths, light, soft) {
+    if (!light) {
+      if (!keepMonths) loadMonths();
+      loadAttachments();
+    }
     if (histYm) { loadArchived(); return; }
     document.getElementById('hist-sum').innerHTML = '';
     var listEl = document.getElementById('expense-list');
-    listEl.innerHTML = '<div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div><div class="sg-skel card"></div></div>';
+    // 一覧がもう出ているとき（前回の内容・読み直し）は、灰色の枠に戻さない
+    if (!listEl.querySelector('.expense-item, .sg-empty')) listEl.innerHTML = '<div class="sg-skel-wrap" aria-busy="true" aria-label="読み込み中"><div class="sg-skel card"></div><div class="sg-skel card"></div><div class="sg-skel card"></div></div>';
     callApi('getExpenses', { staffName: currentStaff })
       .then(function(expenses) {
-        historyItems = expenses || [];
-        if (!expenses || expenses.length === 0) {
-          listEl.innerHTML = SiegNav.empty('まだ入力がありません', '「入力」で領収書の写真を撮るか、手動で入れると、ここに並びます');
-          document.getElementById('hdr-total').textContent = '¥0';
-          return;
-        }
-        var total = 0;
-        var html = '';
-        expenses.forEach(function(e, i) {
-          total += Number(e.amount) || 0;
-          var cls = e.item || 'その他';
-          var dateStr = e.date ? new Date(e.date).toLocaleDateString('ja-JP') : '—';
-          // 内容は手入力なので、記号（< や &）が入っても崩れないようエスケープする
-          html += '<div class="expense-item ' + esc(cls) + '">';
-          html += '<div><div class="exp-tag">' + esc(e.item || '—') + flowTag(e.flow) + '</div>';
-          html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
-          html += '<div class="exp-date">' + esc(dateStr) + '</div></div>';
-          html += '<div><div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div>';
-          html += '<div class="exp-actions"><button class="btn-edit" onclick="editExpense(' + i + ')">編集</button>';
-          html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">削除</button></div></div>';
-          html += '</div>';
-        });
-        listEl.innerHTML = html;
-        document.getElementById('hdr-total').textContent = '¥' + total.toLocaleString();
+        if (histYm) return;   // 読んでいるあいだに前の月へ切り替えた
+        if (soft && listEl.querySelector('.expense-item.editing')) return;
+        historyFresh = true;
+        renderExpenses(expenses);
+        if (nowYm) SiegNav.cacheSet(cacheKey('exp'), { ym: nowYm, list: historyItems });
       })
       .catch(function(err) {
         listEl.innerHTML = GasClient.errorHtml(err, '読み込めませんでした', 'もう一度読み込む');
@@ -1080,6 +1120,7 @@
       .then(function(ym) {
         document.getElementById('hdr-month').textContent = ym;
         document.getElementById('hdr-total').textContent = '¥0';
+        nowYm = ym; SiegNav.cacheSet(cacheKey('info'), { yearMonth: ym }); SiegNav.cacheDel(cacheKey('exp'));   // 前回の内容も新しい月に
         document.getElementById('reset-result').style.color = 'var(--sg-green)';
         document.getElementById('reset-result').textContent = '✅ ' + ym + ' にリセットしました';
       })
