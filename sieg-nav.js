@@ -106,6 +106,24 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', backBar);
   else backBar();
 
+  /* 数字だけの書体（件数・金額の大きい数字）。数字と記号だけ取り寄せるので小さい。待たずに画面を出す */
+  (function numFont() {
+    if (document.querySelector('link[data-sg-num]') || /Barlow\+Condensed/.test(Array.prototype.map.call(document.querySelectorAll('link[rel="stylesheet"]'), function (l) { return l.href; }).join(' '))) return;
+    var l = document.createElement('link');
+    l.rel = 'stylesheet'; l.setAttribute('data-sg-num', '');
+    l.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&text=0123456789%2C.%2B-%2F%C2%A5&display=swap';
+    (document.head || document.documentElement).appendChild(l);
+  })();
+
+  /* キャリアの名前（docomo・au・SoftBank の書き方の違いをそろえる）→ 'docomo' / 'au' / 'softbank' / '' */
+  function carrierKey(s) {
+    var t = String(s || '').toLowerCase().replace(/\s/g, '');
+    if (/docomo|ドコモ/.test(t)) return 'docomo';
+    if (/softbank|ソフトバンク|^sb$|ymobile|ワイモバイル/.test(t)) return 'softbank';
+    if (/^au|エーユー|uq/.test(t)) return 'au';
+    return '';
+  }
+
   /* ═══ 3. 画面の部品（確認・お知らせ・元に戻す・名前を選ぶ・送ったあと） ═══
      どのツールも同じ形にする。ブラウザの confirm() / alert() は使わない。
        SiegNav.confirm('11/5 の入力を削除しますか？', { ok: '削除する', danger: true }).then(function (yes) { … })
@@ -355,6 +373,6 @@
     staff: staff, setStaff: setStaff, portalUrl: PORTAL_URL,
     confirm: confirmSheet, alert: alertSheet, toast: toast, undoable: undoable, flushUndo: flushUndo,
     pickName: pickName, done: done, empty: empty, watchActionbars: watchActionbars, wide: wide,
-    cacheGet: cacheGet, cacheSet: cacheSet, cacheDel: cacheDel
+    cacheGet: cacheGet, cacheSet: cacheSet, cacheDel: cacheDel, carrierKey: carrierKey
   };
 })(this);
