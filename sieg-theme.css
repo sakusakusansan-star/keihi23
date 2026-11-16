@@ -12,7 +12,9 @@
      --sg-sunk     入力欄・チップの地  --sg-hair     区切り線・枠線
      --sg-ink      文字              --sg-ink2     少し弱い文字
      --sg-mute     説明文            --sg-faint    いちばん弱い文字
-     --sg-primary  主ボタン・選択中の地（紺。暗い配色では明るい色）
+     --sg-primary  主ボタン・選択中の地（ロゴの紺）
+     --sg-docomo / --sg-au / --sg-softbank  キャリア色（見分けにだけ使う。飾りには使わない）
+     --sg-num      数字だけの書体（件数・金額などの大きい数字に。.sg-num を付ける）
      --sg-on-primary  主ボタンの上の文字
      --sg-amber / --sg-red / --sg-blue / --sg-teal / --sg-green  各色（*-tint は薄い地）
      --sg-sun / --sg-sat  カレンダーの日曜・土曜
@@ -22,7 +24,9 @@
   --sg-bg: #EFF1F4; --sg-surface: #FFFFFF; --sg-sunk: #F4F6F8;
   --sg-ink: #0E1A2C; --sg-ink2: #3E4A5B; --sg-mute: #6B7584; --sg-faint: #9AA3AF;
   --sg-hair: #E3E6EA; --sg-hair2: #ECEEF1;
-  --sg-primary: #0E1A2C; --sg-on-primary: #FFFFFF;
+  --sg-primary: #1F3A5F; --sg-on-primary: #FFFFFF;   /* ロゴの紺（トップ・獲得報告と同じ） */
+  --sg-docomo: #CC0033; --sg-au: #EB5505; --sg-softbank: #5F6670;   /* キャリア色（キャリアの見分けにだけ使う） */
+  --sg-num: "Barlow Condensed", "Hiragino Kaku Gothic ProN", "Hiragino Sans", system-ui, sans-serif;   /* 数字だけの書体（sieg-nav.js が読み込む） */
   --sg-amber: #A06400; --sg-amber-tint: #FAF0DF;
   --sg-red: #AE2B24;   --sg-red-tint: #F9EAE8;
   --sg-blue: #294780;  --sg-blue-tint: #E9EEF6;
@@ -40,7 +44,7 @@
     --sg-bg: #0C1015; --sg-surface: #161B23; --sg-sunk: #1C222B;
     --sg-ink: #E9EEF4; --sg-ink2: #B7C1CD; --sg-mute: #8B95A3; --sg-faint: #5F6978;
     --sg-hair: #262D37; --sg-hair2: #1E242C;
-    --sg-primary: #E9EEF4; --sg-on-primary: #0C1015;
+    --sg-primary: #2F5384; --sg-on-primary: #FFFFFF;
     --sg-amber: #E7AB44; --sg-amber-tint: #2A2115;
     --sg-red: #F07B6F;   --sg-red-tint: #2B1917;
     --sg-blue: #84A9E3;  --sg-blue-tint: #182130;
@@ -223,3 +227,14 @@ body.has-actionbar.has-tabbar { padding-bottom: calc(24px + var(--sg-actionbar-h
   body.sg-two [data-sg-two] > [data-sg-pair="side"] { grid-column: 2; display: block !important; }
   [data-sg-pairtab] { display: none !important; }
 }
+
+/* ═══ 新しいデザイン（トップ・獲得報告と同じ決まり）═══
+   ・「Sieg 業務ポータル」の小見出しは出さない（どの画面でも同じで、何も伝えていないため）
+   ・大きい数字（件数・金額）は .sg-num で数字だけの書体に
+   ・キャリアは、選んだときにキャリアの色で塗る（.sg-carrier と data-carrier） */
+.sg-eyebrow { display: none !important; }
+.sg-head > .sg-who, .sg-head > .sg-datepill { margin-top: 2px; }
+.sg-num { font-family: var(--sg-num); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+[data-carrier="docomo"].sg-carrier-on { background: var(--sg-docomo) !important; border-color: var(--sg-docomo) !important; color: #fff !important; }
+[data-carrier="au"].sg-carrier-on { background: var(--sg-au) !important; border-color: var(--sg-au) !important; color: #fff !important; }
+[data-carrier="softbank"].sg-carrier-on { background: var(--sg-softbank) !important; border-color: var(--sg-softbank) !important; color: #fff !important; }

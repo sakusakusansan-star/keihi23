@@ -219,6 +219,11 @@
   .btn-submit-all, .btn-analyze, .btn-pdf, .method-tab { border-radius: var(--sg-r-sm); }
   .item-chip.selected { background: var(--sg-primary); border-color: var(--sg-primary); color: var(--sg-on-primary); }
   .preview-clear { color: #fff; }
+
+  /* ═══ 新しいデザイン：金額は数字だけの書体 ═══ */
+  .exp-amount, .hist-sum b, .hdr-total { font-family: var(--sg-num); font-weight: 700; }
+  .exp-amount { font-size: 21px; }
+  .hdr-total { font-size: 17px; }
 </style>
 </head>
 <body class="has-tabbar">
@@ -973,8 +978,8 @@
       html += '<div class="exp-desc">' + esc(e.description || '（内容なし）') + '</div>';
       html += '<div class="exp-date">' + esc(dateStr) + '</div></div>';
       html += '<div><div class="exp-amount">¥' + (Number(e.amount) || 0).toLocaleString() + '</div>';
-      html += '<div class="exp-actions"><button class="btn-edit" onclick="editExpense(' + i + ')">編集</button>';
-      html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">削除</button></div></div>';
+      html += '<div class="exp-actions"><button class="btn-edit" onclick="editExpense(' + i + ')">直す</button>';
+      html += '<button class="btn-del" onclick="deleteExpense(' + i + ', this)">消す</button></div></div>';
       html += '</div>';
     });
     listEl.innerHTML = html;
