@@ -224,6 +224,18 @@
   .exp-amount, .hist-sum b, .hdr-total { font-family: var(--sg-num); font-weight: 700; }
   .exp-amount { font-size: 21px; }
   .hdr-total { font-size: 17px; }
+
+  /* 一覧：カードを重ねず、行で並べる（獲得報告と同じ）。費目は左の小さな色の点 */
+  .expense-item { background: none; border-left: 0; border-radius: 0; padding: 13px 2px; margin: 0; gap: 12px; align-items: flex-start; }
+  .expense-item + .expense-item { border-top: 1px solid var(--sg-hair2, var(--sg-hair)); }
+  .expense-item > div:first-child { flex: 1; min-width: 0; }
+  .exp-tag { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; color: var(--sg-ink2, var(--sg-mute)); }
+  .exp-tag::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--sg-primary); }
+  .expense-item.ホテル .exp-tag::before { background: var(--sg-amber); }
+  .expense-item.交際費 .exp-tag::before { background: var(--sg-red); }
+  .expense-item.その他 .exp-tag::before { background: var(--sg-faint); }
+  .exp-desc { font-size: 15px; word-break: break-all; }
+  .exp-actions { margin-top: 8px; }
 </style>
 </head>
 <body class="has-tabbar">
